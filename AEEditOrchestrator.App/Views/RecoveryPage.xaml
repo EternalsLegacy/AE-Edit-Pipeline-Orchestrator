@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:AEEditOrchestrator.App.ViewModels"
+             x:Name="RecoveryRootPage"
+             x:Class="AEEditOrchestrator.App.Views.RecoveryPage"
+             x:DataType="vm:RecoveryViewModel"
+             Title="Backups &amp; Recovery">
+
+    <Grid RowDefinitions="Auto, *, Auto, Auto"
+          Padding="14"
+          RowSpacing="10">
+
+        <!-- Card 1: Aktuelles .aep-Projekt -->
+        <Border Grid.Row="0"
+                Style="{StaticResource CardBorderStyle}"
+                StrokeShape="RoundRectangle 8">
+            <VerticalStackLayout Spacing="8">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Backups &amp; Recovery"
+                           Style="{StaticResource PageTitleLabelStyle}" />
+                    <Label Text="Unveränderliche .aep-Snapshots aus _AEP_Backups wiederherstellen oder Reverse-Script ausführen"
+                           Style="{StaticResource MutedCaptionLabelStyle}" />
+                </VerticalStackLayout>
+
+                <Grid ColumnDefinitions="*, Auto, Auto" ColumnSpacing="8">
+                    <Entry Grid.Column="0"
+                           Text="{Binding ProjectFilePath, Mode=TwoWay}"
+                           IsEnabled="{Binding IsNotBusy}"
+                           Placeholder="Pfad zur .aep-Datei (oder über Preflight in Pipeline ermitteln)..." />
+                    <Button Grid.Column="1"
+                            Text="Datei wählen"
+                            Style="{StaticResource SecondaryActionButtonStyle}"
+                            Command="{Binding BrowseProjectFileCommand}" />
+                    <Button Grid.Column="2"
+                            Text="Snapshots laden"
+                            Style="{StaticResource PrimaryActionButtonStyle}"
+                            Command="{Binding LoadSnapshotsCommand}" />
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- Card 2: Snapshot Liste -->
+        <Border Grid.Row="1"
+                Style="{StaticResource CardBorderStyle}"
+                StrokeShape="RoundRectangle 8">
+            <Grid RowDefinitions="Auto, *" RowSpacing="8">
+                <Label Grid.Row="0"
+                       Text="VERFÜGBARE SNAPSHOTS (_AEP_BACKUPS)"
+                       Style="{StaticResource SectionHeaderLabelStyle}" />
+
+                <Label Grid.Row="1"
+                       IsVisible="{Binding HasNoSnapshots}"
+                       Text="Keine Snapshots geladen. Wähle ein .aep-Projekt und klicke auf 'Snapshots laden'."
+                       Style="{StaticResource MutedCaptionLabelStyle}"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center" />
+
+                <CollectionView Grid.Row="1"
+                                ItemsSource="{Binding Snapshots}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SnapshotItemViewModel">
+                            <Border BackgroundColor="{StaticResource SurfaceElevated}"
+                                    Stroke="{StaticResource BorderSubtle}"
+                                    StrokeShape="RoundRectangle 6"
+                                    Padding="10,8"
+                                    Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*, Auto"
+                                      RowDefinitions="Auto, Auto"
+                                      ColumnSpacing="12"
+                                      RowSpacing="4">
+
+                                    <!-- Row 0: Date, Transaction ID, Status -->
+                                    <HorizontalStackLayout Grid.Row="0"
+                                                           Grid.Column="0"
+                                                           Spacing="8"
+                                                           VerticalOptions="Center">
+                                        <Label Text="{Binding CreatedAtText}"
+                                               FontFamily="OpenSansSemibold"
+                                               FontSize="12.5"
+                                               TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="{Binding TransactionId}"
+                                               Style="{StaticResource MutedCaptionLabelStyle}"
+                                               VerticalOptions="Center" />
+                                        <Border BackgroundColor="{StaticResource AccentSubtleBg}"
+                                                Stroke="{StaticResource AccentSubtleBorder}"
+                                                StrokeShape="RoundRectangle 8"
+                                                Padding="6,2">
+                                            <Label Text="{Binding StatusText}"
+                                                   FontSize="10"
+                                                   FontFamily="OpenSansSemibold"
+                                                   TextColor="{StaticResource AccentHover}" />
+                                        </Border>
+                                    </HorizontalStackLayout>
+
+                                    <!-- Row 1: SHA-256 + Integrity + Details -->
+                                    <HorizontalStackLayout Grid.Row="1"
+                                                           Grid.Column="0"
+                                                           Spacing="8"
+                                                           VerticalOptions="Center">
+                                        <Label Text="{Binding ShortSha256Text, StringFormat='SHA-256: {0}'}"
+                                               Style="{StaticResource MutedCaptionLabelStyle}" />
+
+                                        <Border StrokeShape="RoundRectangle 8"
+                                                Padding="6,1"
+                                                BackgroundColor="{StaticResource StatusErrorBg}"
+                                                Stroke="{StaticResource StatusErrorBorder}">
+                                            <Border.Triggers>
+                                                <DataTrigger TargetType="Border"
+                                                             Binding="{Binding IsIntegrityValid}"
+                                                             Value="True">
+                                                    <Setter Property="BackgroundColor" Value="{StaticResource StatusSuccessBg}" />
+                                                    <Setter Property="Stroke" Value="{StaticResource StatusSuccessBorder}" />
+                                                </DataTrigger>
+                                            </Border.Triggers>
+                                            <Label Text="{Binding IntegrityText}"
+                                                   FontSize="10"
+                                                   FontFamily="OpenSansSemibold"
+                                                   TextColor="{StaticResource StatusError}">
+                                                <Label.Triggers>
+                                                    <DataTrigger TargetType="Label"
+                                                                 Binding="{Binding IsIntegrityValid}"
+                                                                 Value="True">
+                                                        <Setter Property="TextColor" Value="{StaticResource StatusSuccess}" />
+                                                    </DataTrigger>
+                                                </Label.Triggers>
+                                            </Label>
+                                        </Border>
+
+                                        <Label Text="{Binding DetailsText}"
+                                               Style="{StaticResource MutedCaptionLabelStyle}"
+                                               LineBreakMode="TailTruncation" />
+                                    </HorizontalStackLayout>
+
+                                    <!-- Action Button -->
+                                    <Button Grid.Row="0"
+                                            Grid.RowSpan="2"
+                                            Grid.Column="1"
+                                            Text="Diesen Stand wiederherstellen"
+                                            Style="{StaticResource SecondaryActionButtonStyle}"
+                                            VerticalOptions="Center"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:RecoveryViewModel}}, Path=RestoreSnapshotCommand, x:DataType=vm:RecoveryViewModel}"
+                                            CommandParameter="{Binding .}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </Grid>
+        </Border>
+
+        <!-- Card 3: Granulares Reverse-Script -->
+        <Border Grid.Row="2"
+                Style="{StaticResource CardBorderStyle}"
+                StrokeShape="RoundRectangle 8">
+            <VerticalStackLayout Spacing="8">
+                <Label Text="GRANULARES REVERSE-SCRIPT AUSFÜHREN"
+                       Style="{StaticResource SectionHeaderLabelStyle}" />
+                <Label Text="Entpackt gezielt Stufe 2 (BlurZoom &amp; ZoomGroup) und/oder Stufe 1 (Pre-comp &amp; Start-/End-Blurs) in der offenen AE-Komposition."
+                       Style="{StaticResource MutedCaptionLabelStyle}" />
+
+                <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10">
+                    <Picker Grid.Column="0"
+                            ItemsSource="{Binding ReverseModeOptions}"
+                            SelectedItem="{Binding SelectedReverseModeOption, Mode=TwoWay}"
+                            IsEnabled="{Binding IsNotBusy}" />
+
+                    <Button Grid.Column="1"
+                            Text="99_ReverseRollback ausführen"
+                            Style="{StaticResource DangerActionButtonStyle}"
+                            Command="{Binding ExecuteReverseRollbackCommand}" />
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- Status Message Banner -->
+        <Border Grid.Row="3"
+                IsVisible="{Binding HasStatusMessage}"
+                StrokeShape="RoundRectangle 8"
+                Padding="12,8"
+                BackgroundColor="{StaticResource StatusSuccessBg}"
+                Stroke="{StaticResource StatusSuccessBorder}">
+            <Border.Triggers>
+                <DataTrigger TargetType="Border"
+                             Binding="{Binding IsStatusError}"
+                             Value="True">
+                    <Setter Property="BackgroundColor" Value="{StaticResource StatusErrorBg}" />
+                    <Setter Property="Stroke" Value="{StaticResource StatusErrorBorder}" />
+                </DataTrigger>
+            </Border.Triggers>
+            <Label Text="{Binding StatusMessage}"
+                   FontSize="12"
+                   FontFamily="OpenSansSemibold"
+                   TextColor="{StaticResource StatusSuccess}"
+                   LineBreakMode="WordWrap">
+                <Label.Triggers>
+                    <DataTrigger TargetType="Label"
+                                 Binding="{Binding IsStatusError}"
+                                 Value="True">
+                        <Setter Property="TextColor" Value="{StaticResource StatusError}" />
+                    </DataTrigger>
+                </Label.Triggers>
+            </Label>
+        </Border>
+
+    </Grid>
+</ContentPage>

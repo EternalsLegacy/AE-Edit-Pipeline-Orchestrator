@@ -1,0 +1,1243 @@
+/*
+ * _lib_core.jsxinc
+ * Shared ECMAScript 3 (ExtendScript) core library for AE Edit Pipeline Orchestrator.
+ * Strict ES3 only: var and function, no UI dialogs, language-independent AE match names.
+ */
+
+if (typeof AE_UNDO_DEPTH === "undefined") {
+    var AE_UNDO_DEPTH = 0;
+}
+
+var AE_DEFAULT_EXCLUDED_NAMES = [
+    "adjustment layer 1",
+    "black solid 9",
+    "black solid 10",
+    "eternals"
+];
+
+// ================= STRING & ARRAY HELPERS =================
+
+function trimStr(str) {
+    if (str === null || str === undefined) {
+        return "";
+    }
+    return String(str).replace(/^\s+|\s+$/g, "");
+}
+
+function startsWith(str, prefix) {
+    if (str === null || str === undefined || prefix === null || prefix === undefined) {
+        return false;
+    }
+    var s = String(str);
+    var p = String(prefix);
+    return s.indexOf(p) === 0;
+}
+
+function endsWith(str, suffix) {
+    if (str === null || str === undefined || suffix === null || suffix === undefined) {
+        return false;
+    }
+    var s = String(str);
+    var suf = String(suffix);
+    if (suf.length > s.length) {
+        return false;
+    }
+    return s.lastIndexOf(suf) === (s.length - suf.length);
+}
+
+function isArray(val) {
+    return Object.prototype.toString.call(val) === "[object Array]";
+}
+
+function arrayIndexOf(arr, item) {
+    if (!arr) {
+        return -1;
+    }
+    for (var i = 0; i < arr.length; i++) {
+        if (arr[i] === item) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function arrayContains(arr, item) {
+    return arrayIndexOf(arr, item) !== -1;
+}
+
+function stripBom(text) {
+    if (text === null || text === undefined) {
+        return "";
+    }
+    var s = String(text);
+    while (s.length > 0 && s.charCodeAt(0) === 0xFEFF) {
+        s = s.substring(1);
+    }
+    return s;
+}
+
+function padZero(num, width) {
+    var s = String(num);
+    while (s.length < width) {
+        s = "0" + s;
+    }
+    return s;
+}
+
+function formatUtcIsoNow() {
+    var d = new Date();
+    return d.getUTCFullYear() + "-" +
+        padZero(d.getUTCMonth() + 1, 2) + "-" +
+        padZero(d.getUTCDate(), 2) + "T" +
+        padZero(d.getUTCHours(), 2) + ":" +
+        padZero(d.getUTCMinutes(), 2) + ":" +
+        padZero(d.getUTCSeconds(), 2) + "." +
+        padZero(d.getUTCMilliseconds(), 3) + "Z";
+}
+
+// ================= ES3 JSON PARSER & SERIALIZER =================
+
+var AE_JSON = (function () {
+    function escapeString(str) {
+        var out = "\"";
+        for (var i = 0; i < str.length; i++) {
+            var ch = str.charAt(i);
+            var code = str.charCodeAt(i);
+            if (ch === "\"") {
+                out += "\\\"";
+            } else if (ch === "\\") {
+                out += "\\\\";
+            } else if (ch === "\b") {
+                out += "\\b";
+            } else if (ch === "\f") {
+                out += "\\f";
+            } else if (ch === "\n") {
+                out += "\\n";
+            } else if (ch === "\r") {
+                out += "\\r";
+            } else if (ch === "\t") {
+                out += "\\t";
+            } else if (code < 0x20 || code === 0x2028 || code === 0x2029) {
+                var hex = code.toString(16);
+                while (hex.length < 4) {
+                    hex = "0" + hex;
+                }
+                out += "\\u" + hex;
+            } else {
+                out += ch;
+            }
+        }
+        out += "\"";
+        return out;
+    }
+
+    function serializeValue(val, indentUnit, depth) {
+        if (val === null) {
+            return "null";
+        }
+        var t = typeof val;
+        if (t === "undefined" || t === "function") {
+            return undefined;
+        }
+        if (t === "boolean") {
+            return val ? "true" : "false";
+        }
+        if (t === "number") {
+            return isFinite(val) ? String(val) : "null";
+        }
+        if (t === "string") {
+            return escapeString(val);
+        }
+        if (val instanceof Date) {
+            var iso = val.getUTCFullYear() + "-" +
+                padZero(val.getUTCMonth() + 1, 2) + "-" +
+                padZero(val.getUTCDate(), 2) + "T" +
+                padZero(val.getUTCHours(), 2) + ":" +
+                padZero(val.getUTCMinutes(), 2) + ":" +
+                padZero(val.getUTCSeconds(), 2) + "Z";
+            return escapeString(iso);
+        }
+
+        var pad = "";
+        var childPad = "";
+        if (indentUnit) {
+            for (var d = 0; d < depth; d++) {
+                pad += indentUnit;
+            }
+            childPad = pad + indentUnit;
+        }
+
+        if (isArray(val)) {
+            if (val.length === 0) {
+                return "[]";
+            }
+            var arrParts = [];
+            for (var i = 0; i < val.length; i++) {
+                var elemStr = serializeValue(val[i], indentUnit, depth + 1);
+                arrParts.push(elemStr === undefined ? "null" : elemStr);
+            }
+            if (indentUnit) {
+                return "[\n" + childPad + arrParts.join(",\n" + childPad) + "\n" + pad + "]";
+            }
+            return "[" + arrParts.join(",") + "]";
+        }
+
+        var objParts = [];
+        for (var k in val) {
+            if (Object.prototype.hasOwnProperty.call(val, k)) {
+                var propStr = serializeValue(val[k], indentUnit, depth + 1);
+                if (propStr !== undefined) {
+                    var sep = indentUnit ? ": " : ":";
+                    objParts.push(escapeString(String(k)) + sep + propStr);
+                }
+            }
+        }
+        if (objParts.length === 0) {
+            return "{}";
+        }
+        if (indentUnit) {
+            return "{\n" + childPad + objParts.join(",\n" + childPad) + "\n" + pad + "}";
+        }
+        return "{" + objParts.join(",") + "}";
+    }
+
+    function stringify(val, space) {
+        var indentUnit = "";
+        if (typeof space === "number" && space > 0) {
+            var count = Math.min(10, Math.floor(space));
+            for (var i = 0; i < count; i++) {
+                indentUnit += " ";
+            }
+        } else if (typeof space === "string" && space.length > 0) {
+            indentUnit = space;
+        }
+        var res = serializeValue(val, indentUnit, 0);
+        return res === undefined ? "null" : res;
+    }
+
+    function parse(text) {
+        var src = stripBom(text);
+        var at = 0;
+        var ch = " ";
+
+        function fail(msg) {
+            throw new Error("AE_JSON.parse error at position " + at + ": " + msg);
+        }
+
+        function nextChar(expected) {
+            if (expected && ch !== expected) {
+                fail("Expected '" + expected + "' instead of '" + ch + "'");
+            }
+            ch = src.charAt(at);
+            at += 1;
+            return ch;
+        }
+
+        function skipWhite() {
+            while (ch && (ch === " " || ch === "\t" || ch === "\n" || ch === "\r")) {
+                nextChar();
+            }
+        }
+
+        function parseNumber() {
+            var numStr = "";
+            if (ch === "-") {
+                numStr = "-";
+                nextChar("-");
+            }
+            if (ch < "0" || ch > "9") {
+                fail("Invalid number");
+            }
+            while (ch >= "0" && ch <= "9") {
+                numStr += ch;
+                nextChar();
+            }
+            if (ch === ".") {
+                numStr += ".";
+                while (nextChar() && ch >= "0" && ch <= "9") {
+                    numStr += ch;
+                }
+            }
+            if (ch === "e" || ch === "E") {
+                numStr += ch;
+                nextChar();
+                if (ch === "-" || ch === "+") {
+                    numStr += ch;
+                    nextChar();
+                }
+                if (ch < "0" || ch > "9") {
+                    fail("Invalid exponent");
+                }
+                while (ch >= "0" && ch <= "9") {
+                    numStr += ch;
+                    nextChar();
+                }
+            }
+            var numVal = Number(numStr);
+            if (!isFinite(numVal)) {
+                fail("Bad number: " + numStr);
+            }
+            return numVal;
+        }
+
+        function parseString() {
+            var str = "";
+            if (ch === "\"") {
+                while (nextChar()) {
+                    if (ch === "\"") {
+                        nextChar();
+                        return str;
+                    }
+                    if (ch === "\\") {
+                        nextChar();
+                        if (ch === "u") {
+                            var uffff = 0;
+                            for (var i = 0; i < 4; i++) {
+                                var hex = parseInt(nextChar(), 16);
+                                if (!isFinite(hex)) {
+                                    fail("Bad unicode escape");
+                                }
+                                uffff = uffff * 16 + hex;
+                            }
+                            str += String.fromCharCode(uffff);
+                        } else if (ch === "\"") {
+                            str += "\"";
+                        } else if (ch === "\\") {
+                            str += "\\";
+                        } else if (ch === "/") {
+                            str += "/";
+                        } else if (ch === "b") {
+                            str += "\b";
+                        } else if (ch === "f") {
+                            str += "\f";
+                        } else if (ch === "n") {
+                            str += "\n";
+                        } else if (ch === "r") {
+                            str += "\r";
+                        } else if (ch === "t") {
+                            str += "\t";
+                        } else {
+                            fail("Bad escape character: \\" + ch);
+                        }
+                    } else {
+                        str += ch;
+                    }
+                }
+            }
+            fail("Unterminated string");
+        }
+
+        function parseWord() {
+            if (ch === "t") {
+                nextChar("t");
+                nextChar("r");
+                nextChar("u");
+                nextChar("e");
+                return true;
+            }
+            if (ch === "f") {
+                nextChar("f");
+                nextChar("a");
+                nextChar("l");
+                nextChar("s");
+                nextChar("e");
+                return false;
+            }
+            if (ch === "n") {
+                nextChar("n");
+                nextChar("u");
+                nextChar("l");
+                nextChar("l");
+                return null;
+            }
+            fail("Unexpected character '" + ch + "'");
+        }
+
+        var parseValue;
+
+        function parseArray() {
+            var arr = [];
+            if (ch === "[") {
+                nextChar("[");
+                skipWhite();
+                if (ch === "]") {
+                    nextChar("]");
+                    return arr;
+                }
+                while (ch) {
+                    arr.push(parseValue());
+                    skipWhite();
+                    if (ch === "]") {
+                        nextChar("]");
+                        return arr;
+                    }
+                    nextChar(",");
+                    skipWhite();
+                }
+            }
+            fail("Bad array");
+        }
+
+        function parseObject() {
+            var obj = {};
+            if (ch === "{") {
+                nextChar("{");
+                skipWhite();
+                if (ch === "}") {
+                    nextChar("}");
+                    return obj;
+                }
+                while (ch) {
+                    var key = parseString();
+                    skipWhite();
+                    nextChar(":");
+                    obj[key] = parseValue();
+                    skipWhite();
+                    if (ch === "}") {
+                        nextChar("}");
+                        return obj;
+                    }
+                    nextChar(",");
+                    skipWhite();
+                }
+            }
+            fail("Bad object");
+        }
+
+        parseValue = function () {
+            skipWhite();
+            if (ch === "{") {
+                return parseObject();
+            }
+            if (ch === "[") {
+                return parseArray();
+            }
+            if (ch === "\"") {
+                return parseString();
+            }
+            if (ch === "-" || (ch >= "0" && ch <= "9")) {
+                return parseNumber();
+            }
+            return parseWord();
+        };
+
+        var result = parseValue();
+        skipWhite();
+        if (ch) {
+            fail("Trailing characters after JSON value");
+        }
+        return result;
+    }
+
+    return {
+        parse: parse,
+        stringify: stringify
+    };
+})();
+
+// ================= UNDO GROUP SAFETY HELPERS =================
+
+function safeBeginUndoGroup(groupName) {
+    app.beginUndoGroup(groupName);
+    AE_UNDO_DEPTH += 1;
+}
+
+function safeEndUndoGroup() {
+    if (AE_UNDO_DEPTH > 0) {
+        AE_UNDO_DEPTH -= 1;
+        app.endUndoGroup();
+    }
+}
+
+function closeAllUndoGroups() {
+    while (AE_UNDO_DEPTH > 0) {
+        AE_UNDO_DEPTH -= 1;
+        try {
+            app.endUndoGroup();
+        } catch (e) {}
+    }
+}
+
+// ================= IPC FILE HELPERS =================
+
+function getIpcFolder() {
+    var localAppData = null;
+    try {
+        localAppData = $.getenv("LOCALAPPDATA");
+    } catch (e) {
+        localAppData = null;
+    }
+
+    var ipcPath;
+    if (localAppData && trimStr(localAppData) !== "") {
+        ipcPath = trimStr(localAppData).replace(/\\/g, "/") + "/AEEditOrchestrator/ipc";
+    } else {
+        ipcPath = Folder.userData.parent.fsName.replace(/\\/g, "/") + "/Local/AEEditOrchestrator/ipc";
+    }
+
+    var folder = new Folder(ipcPath);
+    if (!folder.exists) {
+        folder.create();
+    }
+    return folder;
+}
+
+function readUtf8TextFile(fileObj) {
+    if (!fileObj || !fileObj.exists) {
+        throw new Error("Datei nicht gefunden: " + (fileObj ? fileObj.fsName : "null"));
+    }
+    fileObj.encoding = "UTF-8";
+    if (!fileObj.open("r")) {
+        throw new Error("Datei konnte nicht gelesen werden: " + fileObj.fsName);
+    }
+    var raw = "";
+    try {
+        raw = fileObj.read();
+    } finally {
+        fileObj.close();
+    }
+    return stripBom(raw);
+}
+
+function writeUtf8TextFile(fileObj, text) {
+    var parentFolder = fileObj.parent;
+    if (parentFolder && !parentFolder.exists) {
+        parentFolder.create();
+    }
+
+    var tmpFile = new File(fileObj.fsName + ".tmp");
+    for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+            tmpFile.encoding = "UTF-8";
+            tmpFile.lineFeed = "Unix";
+            if (tmpFile.open("w")) {
+                tmpFile.write(text);
+                tmpFile.close();
+
+                if (fileObj.exists) {
+                    try {
+                        fileObj.remove();
+                    } catch (eRem) {}
+                }
+                if (tmpFile.rename(fileObj.name)) {
+                    return true;
+                }
+                try {
+                    tmpFile.remove();
+                } catch (eCleanup) {}
+            }
+
+            fileObj.encoding = "UTF-8";
+            fileObj.lineFeed = "Unix";
+            if (fileObj.open("w")) {
+                fileObj.write(text);
+                fileObj.close();
+                return true;
+            }
+        } catch (eWrite) {
+            try {
+                if (tmpFile.exists) {
+                    tmpFile.remove();
+                }
+            } catch (eTmp) {}
+        }
+        $.sleep(20);
+    }
+    return false;
+}
+
+function readJobJson() {
+    var ipcFolder = getIpcFolder();
+    var jobFile = new File(ipcFolder.fsName + "/job.json");
+    if (!jobFile.exists) {
+        throw new Error("IPC job.json nicht gefunden: " + jobFile.fsName);
+    }
+    var content = readUtf8TextFile(jobFile);
+    if (trimStr(content) === "") {
+        throw new Error("IPC job.json ist leer: " + jobFile.fsName);
+    }
+    return AE_JSON.parse(content);
+}
+
+function writeHeartbeat(jobId, currentIndex, totalItems, message) {
+    try {
+        var ipcFolder = getIpcFolder();
+        var hbFile = new File(ipcFolder.fsName + "/heartbeat.json");
+        var payload = {
+            jobId: jobId ? String(jobId) : "",
+            timestampUtc: formatUtcIsoNow(),
+            currentIndex: (typeof currentIndex === "number") ? Math.floor(currentIndex) : 0,
+            totalItems: (typeof totalItems === "number") ? Math.floor(totalItems) : 0,
+            message: (message !== null && message !== undefined) ? String(message) : ""
+        };
+        writeUtf8TextFile(hbFile, AE_JSON.stringify(payload, 2));
+    } catch (e) {}
+}
+
+function writeResultJson(resultObj) {
+    var ipcFolder = getIpcFolder();
+    var resFile = new File(ipcFolder.fsName + "/result.json");
+    var json = AE_JSON.stringify(resultObj, 2);
+    if (!writeUtf8TextFile(resFile, json)) {
+        throw new Error("Konnte result.json nicht schreiben: " + resFile.fsName);
+    }
+}
+
+function getSafeProjectPath() {
+    try {
+        if (app.project && app.project.file !== null) {
+            return app.project.file.fsName;
+        }
+    } catch (e) {}
+    return "";
+}
+
+function getSafeActiveComp() {
+    try {
+        if (app.project && app.project.activeItem && (app.project.activeItem instanceof CompItem)) {
+            return app.project.activeItem;
+        }
+    } catch (e) {}
+    return null;
+}
+
+function getSafeCompName(comp) {
+    try {
+        if (comp && (comp instanceof CompItem)) {
+            return comp.name;
+        }
+        var active = getSafeActiveComp();
+        if (active) {
+            return active.name;
+        }
+    } catch (e) {}
+    return "";
+}
+
+function buildOkResult(jobId, comp, opts) {
+    var o = opts || {};
+    return {
+        jobId: jobId ? String(jobId) : "",
+        status: "ok",
+        projectPath: (o.projectPath !== undefined) ? o.projectPath : getSafeProjectPath(),
+        compositionName: (o.compositionName !== undefined) ? o.compositionName : getSafeCompName(comp),
+        totalClips: (typeof o.totalClips === "number") ? o.totalClips : 0,
+        processedInBatch: (typeof o.processedInBatch === "number") ? o.processedInBatch : 0,
+        skippedInBatch: (typeof o.skippedInBatch === "number") ? o.skippedInBatch : 0,
+        hasMoreBatches: Boolean(o.hasMoreBatches),
+        nextBatchIndex: (typeof o.nextBatchIndex === "number") ? o.nextBatchIndex : 0,
+        detectedState: (o.detectedState !== undefined) ? o.detectedState : null,
+        error: null,
+        errorLine: null,
+        message: (o.message !== undefined && o.message !== null) ? String(o.message) : ""
+    };
+}
+
+function buildErrorResult(jobId, err, fallbackMsg) {
+    var msg = "";
+    var lineNum = null;
+    if (err !== null && err !== undefined) {
+        if (typeof err === "object") {
+            if (err.message) {
+                msg = String(err.message);
+            } else {
+                msg = err.toString();
+            }
+            if (typeof err.line === "number") {
+                lineNum = err.line;
+            }
+        } else {
+            msg = String(err);
+        }
+    }
+    if (!msg && fallbackMsg) {
+        msg = String(fallbackMsg);
+    }
+    if (!msg) {
+        msg = "Unbekannter ExtendScript-Fehler.";
+    }
+
+    var comp = getSafeActiveComp();
+    return {
+        jobId: jobId ? String(jobId) : "",
+        status: "error",
+        projectPath: getSafeProjectPath(),
+        compositionName: getSafeCompName(comp),
+        totalClips: 0,
+        processedInBatch: 0,
+        skippedInBatch: 0,
+        hasMoreBatches: false,
+        nextBatchIndex: 0,
+        detectedState: null,
+        error: msg,
+        errorLine: lineNum,
+        message: fallbackMsg ? String(fallbackMsg) : msg
+    };
+}
+
+// ================= TAG & COMMENT HELPERS =================
+
+function extractClipTag(commentStr) {
+    if (!commentStr) {
+        return null;
+    }
+    var match = String(commentStr).match(/\[EDIT_CLIP:\d+\]/);
+    return match ? match[0] : null;
+}
+
+function extractClipNumber(commentStr) {
+    if (!commentStr) {
+        return null;
+    }
+    var match = String(commentStr).match(/\[EDIT_CLIP:(\d+)\]/);
+    if (match && match.length >= 2) {
+        var num = parseInt(match[1], 10);
+        if (!isNaN(num)) {
+            return num;
+        }
+    }
+    return null;
+}
+
+function hasCommentTag(layer, tag) {
+    if (!layer || !layer.comment || !tag) {
+        return false;
+    }
+    return String(layer.comment).indexOf(String(tag)) !== -1;
+}
+
+function appendCommentTag(layer, tag) {
+    if (!layer || !tag) {
+        return;
+    }
+    var current = layer.comment ? trimStr(layer.comment) : "";
+    if (current.indexOf(tag) !== -1) {
+        return;
+    }
+    layer.comment = current ? (current + " " + tag) : tag;
+}
+
+// ================= LAYER PROTECTION & SELECTION HELPERS =================
+
+function normalizeExcludedNames(excludedNames) {
+    var source = excludedNames;
+    if (source === null || source === undefined) {
+        source = AE_DEFAULT_EXCLUDED_NAMES;
+    }
+    var normalized = [];
+    for (var i = 0; i < source.length; i++) {
+        var entry = trimStr(source[i]).toLowerCase();
+        if (entry !== "") {
+            normalized.push(entry);
+        }
+    }
+    return normalized;
+}
+
+function isProtectedGlobalLayer(layer, totalLayers, excludedNames) {
+    if (!layer) {
+        return true;
+    }
+    if (layer.index === 1 || layer.index === totalLayers) {
+        return true;
+    }
+    if (layer instanceof TextLayer) {
+        return true;
+    }
+    if (layer instanceof AVLayer && !layer.hasVideo) {
+        return true;
+    }
+
+    var lowerName = trimStr(layer.name).toLowerCase();
+    if (lowerName.indexOf("eternals") !== -1) {
+        return true;
+    }
+
+    var list = normalizeExcludedNames(excludedNames);
+    for (var i = 0; i < list.length; i++) {
+        if (lowerName === list[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isExcludedLayer(layer, totalLayers, excludedNames) {
+    if (!layer) {
+        return true;
+    }
+    if (layer.adjustmentLayer) {
+        return true;
+    }
+    return isProtectedGlobalLayer(layer, totalLayers, excludedNames);
+}
+
+function captureSelectedLayers(comp) {
+    var saved = [];
+    if (!comp) {
+        return saved;
+    }
+    var sel = comp.selectedLayers;
+    for (var i = 0; i < sel.length; i++) {
+        saved.push(sel[i]);
+    }
+    return saved;
+}
+
+function replaceCapturedLayer(savedLayers, oldLayer, newLayer) {
+    if (!savedLayers || !newLayer) {
+        return;
+    }
+    for (var i = 0; i < savedLayers.length; i++) {
+        if (savedLayers[i] === oldLayer) {
+            savedLayers[i] = newLayer;
+            return;
+        }
+    }
+}
+
+function deselectAllLayers(comp) {
+    if (!comp) {
+        return;
+    }
+    var sel = comp.selectedLayers;
+    for (var i = sel.length - 1; i >= 0; i--) {
+        try {
+            sel[i].selected = false;
+        } catch (e) {}
+    }
+}
+
+function restoreSelectedLayers(comp, savedLayers) {
+    deselectAllLayers(comp);
+    if (!savedLayers) {
+        return;
+    }
+    for (var i = 0; i < savedLayers.length; i++) {
+        try {
+            if (savedLayers[i]) {
+                savedLayers[i].selected = true;
+            }
+        } catch (e) {}
+    }
+}
+
+// ================= PRESET & EFFECT HELPERS =================
+
+function resolvePresetsFolder(presetsRootPath) {
+    if (presetsRootPath && trimStr(presetsRootPath) !== "") {
+        var explicitFolder = new Folder(trimStr(presetsRootPath));
+        return explicitFolder.exists ? explicitFolder : null;
+    }
+    var adobeDocs = new Folder(Folder.myDocuments.fsName + "/Adobe");
+    if (adobeDocs.exists) {
+        var preferred = new Folder(adobeDocs.fsName + "/After Effects 2026/User Presets");
+        if (preferred.exists) {
+            return preferred;
+        }
+        var items = adobeDocs.getFiles();
+        for (var i = 0; i < items.length; i++) {
+            if (items[i] instanceof Folder && startsWith(items[i].name, "After Effects")) {
+                var up = new Folder(items[i].fsName + "/User Presets");
+                if (up.exists) {
+                    return up;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function findPresetRecursive(folder, baseName) {
+    if (!folder || !folder.exists || !baseName) {
+        return null;
+    }
+    var cleanName = trimStr(baseName);
+    if (endsWith(cleanName.toLowerCase(), ".ffx")) {
+        cleanName = cleanName.substring(0, cleanName.length - 4);
+    }
+    var target = (cleanName + ".ffx").toLowerCase();
+    var files = folder.getFiles();
+    for (var i = 0; i < files.length; i++) {
+        var item = files[i];
+        if (item instanceof File) {
+            if (decodeURI(item.name).toLowerCase() === target) {
+                return item;
+            }
+        } else if (item instanceof Folder) {
+            var found = findPresetRecursive(item, cleanName);
+            if (found !== null) {
+                return found;
+            }
+        }
+    }
+    return null;
+}
+
+function requirePresetFile(presetsFolder, presetName) {
+    if (!presetsFolder || !presetsFolder.exists) {
+        throw new Error("User-Presets-Ordner nicht gefunden. Bitte Pfad in den Einstellungen prüfen.");
+    }
+    var presetFile = findPresetRecursive(presetsFolder, presetName);
+    if (!presetFile) {
+        throw new Error("Preset nicht gefunden: " + presetName + ".ffx im Ordner " + presetsFolder.fsName);
+    }
+    return presetFile;
+}
+
+function applyPresetAtTime(comp, layer, presetFile, atTime) {
+    deselectAllLayers(comp);
+    layer.selected = true;
+    comp.time = atTime;
+    layer.applyPreset(presetFile);
+}
+
+function hasEffectByMatchName(layer, matchName) {
+    var fx = layer.property("ADBE Effect Parade");
+    if (!fx) {
+        return false;
+    }
+    for (var i = 1; i <= fx.numProperties; i++) {
+        if (fx.property(i).matchName === matchName) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function addMotionTile(layer, width, height) {
+    var tileW = (typeof width === "number" && width > 0) ? width : 370;
+    var tileH = (typeof height === "number" && height > 0) ? height : 370;
+    var fx = layer.property("ADBE Effect Parade");
+    var tile = fx.addProperty("ADBE Tile");
+    tile.property("ADBE Tile-0004").setValue(tileW);
+    tile.property("ADBE Tile-0005").setValue(tileH);
+    tile.property("ADBE Tile-0006").setValue(1);
+    return tile;
+}
+
+function addDirectionalBlur(layer, directionDeg, blurLength) {
+    var dir = (typeof directionDeg === "number") ? directionDeg : 90;
+    var len = (typeof blurLength === "number") ? blurLength : 0;
+    var fx = layer.property("ADBE Effect Parade");
+    var dBlur = fx.addProperty("ADBE Motion Blur");
+    dBlur.property("ADBE Motion Blur-0001").setValue(dir);
+    dBlur.property("ADBE Motion Blur-0002").setValue(len);
+    return dBlur;
+}
+
+function collectAnimatedProperties(propGroup, list) {
+    if (!propGroup) {
+        return;
+    }
+    for (var i = 1; i <= propGroup.numProperties; i++) {
+        var p = propGroup.property(i);
+        if (p.propertyType === PropertyType.PROPERTY) {
+            try {
+                if (p.canVaryOverTime && p.numKeys >= 2) {
+                    list.push(p);
+                }
+            } catch (e) {}
+        } else if (p.propertyType === PropertyType.INDEXED_GROUP || p.propertyType === PropertyType.NAMED_GROUP) {
+            collectAnimatedProperties(p, list);
+        }
+    }
+}
+
+function stretchKeyframesToSpan(props, targetIn, targetOut) {
+    if (!props || props.length === 0 || targetOut <= targetIn) {
+        return;
+    }
+
+    var minT = 9999999;
+    var maxT = -9999999;
+
+    for (var pIdx = 0; pIdx < props.length; pIdx++) {
+        var pr = props[pIdx];
+        var tFirst = pr.keyTime(1);
+        var tLast = pr.keyTime(pr.numKeys);
+        if (tFirst < minT) {
+            minT = tFirst;
+        }
+        if (tLast > maxT) {
+            maxT = tLast;
+        }
+    }
+
+    var oldSpan = maxT - minT;
+    var newSpan = targetOut - targetIn;
+    if (oldSpan <= 0.0001) {
+        return;
+    }
+
+    for (var i = 0; i < props.length; i++) {
+        var prop = props[i];
+        var isSpatial = (
+            prop.propertyValueType === PropertyValueType.TwoD_SPATIAL ||
+            prop.propertyValueType === PropertyValueType.ThreeD_SPATIAL
+        );
+
+        var keysData = [];
+        for (var k = 1; k <= prop.numKeys; k++) {
+            var oldT = prop.keyTime(k);
+            var norm = (oldT - minT) / oldSpan;
+            var newT = targetIn + (norm * newSpan);
+
+            var kd = {
+                time: newT,
+                value: prop.keyValue(k),
+                inType: prop.keyInInterpolationType(k),
+                outType: prop.keyOutInterpolationType(k),
+                inEase: prop.keyInTemporalEase(k),
+                outEase: prop.keyOutTemporalEase(k),
+                tAuto: prop.keyTemporalAutoBezier(k),
+                tCont: prop.keyTemporalContinuous(k),
+                isSpatial: isSpatial
+            };
+
+            if (isSpatial) {
+                kd.inTan = prop.keyInSpatialTangent(k);
+                kd.outTan = prop.keyOutSpatialTangent(k);
+                kd.sAuto = prop.keySpatialAutoBezier(k);
+                kd.sCont = prop.keySpatialContinuous(k);
+                kd.roving = prop.keyRoving(k);
+            }
+            keysData.push(kd);
+        }
+
+        for (var r = prop.numKeys; r >= 1; r--) {
+            prop.removeKey(r);
+        }
+
+        for (var n = 0; n < keysData.length; n++) {
+            var d = keysData[n];
+            var newIdx = prop.addKey(d.time);
+            prop.setValueAtKey(newIdx, d.value);
+            prop.setInterpolationTypeAtKey(newIdx, d.inType, d.outType);
+            try {
+                prop.setTemporalEaseAtKey(newIdx, d.inEase, d.outEase);
+                prop.setTemporalContinuousAtKey(newIdx, d.tCont);
+                prop.setTemporalAutoBezierAtKey(newIdx, d.tAuto);
+            } catch (eTemp) {}
+
+            if (d.isSpatial) {
+                try {
+                    prop.setSpatialTangentsAtKey(newIdx, d.inTan, d.outTan);
+                    prop.setSpatialContinuousAtKey(newIdx, d.sCont);
+                    prop.setSpatialAutoBezierAtKey(newIdx, d.sAuto);
+                    if (n > 0 && n < keysData.length - 1) {
+                        prop.setRovingAtKey(newIdx, d.roving);
+                    }
+                } catch (eSpat) {}
+            }
+        }
+    }
+}
+
+function createTrimmedAdjustmentLayer(comp, name, inT, outT, aboveLayer, commentTag) {
+    var adj = comp.layers.addSolid(
+        [1, 1, 1],
+        name,
+        comp.width,
+        comp.height,
+        comp.pixelAspect,
+        comp.duration
+    );
+    adj.adjustmentLayer = true;
+    if (outT > inT) {
+        adj.inPoint = inT;
+        adj.outPoint = outT;
+    } else {
+        adj.inPoint = inT;
+        adj.outPoint = inT + comp.frameDuration;
+    }
+    if (commentTag) {
+        adj.comment = commentTag;
+    }
+    if (aboveLayer) {
+        adj.moveBefore(aboveLayer);
+    }
+    return adj;
+}
+
+// ================= CLIP COLLECTION & ASSOCIATION HELPERS =================
+
+function findAssociatedAdjustmentLayers(comp, baseClip, excludedNames) {
+    var found = [];
+    if (!comp || !baseClip) {
+        return found;
+    }
+    var total = comp.numLayers;
+    var clipTag = extractClipTag(baseClip.comment);
+    var eps = 0.002;
+
+    for (var i = 1; i <= total; i++) {
+        var cand = comp.layer(i);
+        if (!cand.adjustmentLayer) {
+            continue;
+        }
+        if (isProtectedGlobalLayer(cand, total, excludedNames)) {
+            continue;
+        }
+        if (hasCommentTag(cand, "[DONE_ZOOM_ADJ]")) {
+            continue;
+        }
+        if (startsWith(cand.name, "BlurZoom_")) {
+            continue;
+        }
+
+        if (clipTag !== null) {
+            if (hasCommentTag(cand, clipTag)) {
+                found.push(cand);
+            }
+        } else {
+            if (cand.inPoint >= (baseClip.inPoint - eps) && cand.outPoint <= (baseClip.outPoint + eps)) {
+                found.push(cand);
+            }
+        }
+    }
+    return found;
+}
+
+function findTopMostLayerForClip(comp, baseClip, excludedNames) {
+    var topMost = baseClip;
+    var assoc = findAssociatedAdjustmentLayers(comp, baseClip, excludedNames);
+    for (var i = 0; i < assoc.length; i++) {
+        if (assoc[i].index < topMost.index) {
+            topMost = assoc[i];
+        }
+    }
+    return topMost;
+}
+
+function collectSortedEligibleLayers(comp, useSelectedOnly, excludedNames, includeAdjustmentLayers) {
+    var list = [];
+    if (!comp) {
+        return list;
+    }
+    var totalLayers = comp.numLayers;
+    var incAdj = Boolean(includeAdjustmentLayers);
+
+    if (useSelectedOnly) {
+        var sel = comp.selectedLayers;
+        for (var s = 0; s < sel.length; s++) {
+            var sl = sel[s];
+            if (!incAdj && sl.adjustmentLayer) {
+                continue;
+            }
+            if (!isProtectedGlobalLayer(sl, totalLayers, excludedNames)) {
+                list.push(sl);
+            }
+        }
+    } else {
+        for (var l = 1; l <= totalLayers; l++) {
+            var lyr = comp.layer(l);
+            if (!incAdj && lyr.adjustmentLayer) {
+                continue;
+            }
+            if (!isProtectedGlobalLayer(lyr, totalLayers, excludedNames)) {
+                list.push(lyr);
+            }
+        }
+    }
+
+    list.sort(function (a, b) {
+        if (a.inPoint !== b.inPoint) {
+            return a.inPoint - b.inPoint;
+        }
+        return b.index - a.index;
+    });
+
+    return list;
+}
+
+function getBatchSlice(totalItems, batchStartIndex, batchSize) {
+    var startIdx = (typeof batchStartIndex === "number" && batchStartIndex >= 0) ? Math.floor(batchStartIndex) : 0;
+    var size = (typeof batchSize === "number" && batchSize >= 1) ? Math.floor(batchSize) : 10;
+    if (startIdx > totalItems) {
+        startIdx = totalItems;
+    }
+    var endIdx = Math.min(totalItems, startIdx + size);
+    var hasMore = endIdx < totalItems;
+    return {
+        startIndex: startIdx,
+        endIndex: endIdx,
+        hasMoreBatches: hasMore,
+        nextBatchIndex: hasMore ? endIdx : totalItems
+    };
+}
+
+function detectProjectState(comp, settings, requiredPresets) {
+    var s = settings || {};
+    var excluded = s.excludedNames;
+    var activeComp = (comp && (comp instanceof CompItem)) ? comp : getSafeActiveComp();
+    var hasActive = activeComp !== null;
+    var isSaved = false;
+    try {
+        isSaved = (app.project !== null && app.project.file !== null);
+    } catch (eProj) {
+        isSaved = false;
+    }
+
+    var hasEditClipTags = false;
+    var hasStage1Tags = false;
+    var hasZoomGroupTags = false;
+
+    if (hasActive) {
+        var totalLayers = activeComp.numLayers;
+        for (var i = 1; i <= totalLayers; i++) {
+            var lyr = activeComp.layer(i);
+            if (isProtectedGlobalLayer(lyr, totalLayers, excluded)) {
+                continue;
+            }
+            if (hasCommentTag(lyr, "[EDIT_CLIP:")) {
+                hasEditClipTags = true;
+            }
+            if (hasCommentTag(lyr, "[DONE_PIPELINE_1]")) {
+                hasStage1Tags = true;
+            }
+            if (hasCommentTag(lyr, "[DONE_ZOOM_GROUP]")) {
+                hasZoomGroupTags = true;
+            }
+        }
+    }
+
+    var missingPresets = [];
+    var presetsToCheck = [];
+    if (isArray(requiredPresets)) {
+        presetsToCheck = requiredPresets;
+    } else if (s.presets) {
+        var pObj = s.presets;
+        if (pObj.fadeInOut) presetsToCheck.push(pObj.fadeInOut);
+        if (pObj.verticalShake) presetsToCheck.push(pObj.verticalShake);
+        if (pObj.verticalBlur) presetsToCheck.push(pObj.verticalBlur);
+        if (pObj.horizontalShake) presetsToCheck.push(pObj.horizontalShake);
+        if (pObj.horizontalBlur) presetsToCheck.push(pObj.horizontalBlur);
+        if (pObj.blurZoomIn) presetsToCheck.push(pObj.blurZoomIn);
+        if (pObj.blurZoomOut) presetsToCheck.push(pObj.blurZoomOut);
+    }
+
+    if (presetsToCheck.length > 0) {
+        var presetsRoot = resolvePresetsFolder(s.presetsRoot);
+        for (var p = 0; p < presetsToCheck.length; p++) {
+            var presetName = trimStr(presetsToCheck[p]);
+            if (presetName === "") {
+                continue;
+            }
+            if (!presetsRoot || !findPresetRecursive(presetsRoot, presetName)) {
+                if (!arrayContains(missingPresets, presetName)) {
+                    missingPresets.push(presetName);
+                }
+            }
+        }
+    }
+
+    return {
+        hasEditClipTags: hasEditClipTags,
+        hasStage1Tags: hasStage1Tags,
+        hasZoomGroupTags: hasZoomGroupTags,
+        missingPresets: missingPresets,
+        isProjectSaved: isSaved,
+        hasActiveComp: hasActive
+    };
+}
