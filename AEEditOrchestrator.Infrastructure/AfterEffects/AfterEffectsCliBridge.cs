@@ -13,7 +13,11 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
     #region Constants
 
     private const int DefaultWatchdogTimeoutSeconds = 45;
-    private const int GracefulAbortWaitSeconds = 15;
+    private const int DefaultPostScriptTeardownCooldownMs = 1500;
+    private const int GracefulAbortWaitSeconds = 12;
+    private const int GracefulAbortWaitNoHeartbeatSeconds = 2;
+    private const int CloseNoSaveTimeoutSeconds = 8;
+    private const int PostKillHandleReleaseDelayMs = 500;
     private const int GracefulCloseWaitMs = 3000;
     private const int ProcessExitWaitTimeoutMs = 8000;
     private const int DirectOpenReadyTimeoutMs = 10000;
@@ -29,8 +33,10 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
 
     private readonly IpcPaths PathsField;
     private readonly IpcFileWatcher WatcherField;
+    private readonly int PostScriptCooldownMsField;
     private readonly UTF8Encoding Utf8NoBomEncodingField = new UTF8Encoding(false);
     private readonly SemaphoreSlim ExecutionLockField = new SemaphoreSlim(1, 1);
+    private DateTimeOffset LastScriptCompletedUtcField = DateTimeOffset.MinValue;
 
     #endregion
 
@@ -49,15 +55,29 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
     #region Constructors
 
     public AfterEffectsCliBridge()
-        : this(new IpcPaths())
+        : this(new IpcPaths(), AfterEffectsCliBridge.DefaultPostScriptTeardownCooldownMs)
     {
     }
 
     public AfterEffectsCliBridge(IpcPaths Paths)
+        : this(Paths, AfterEffectsCliBridge.DefaultPostScriptTeardownCooldownMs)
+    {
+    }
+
+    public AfterEffectsCliBridge(IpcPaths Paths, int PostScriptCooldownMs)
     {
         ArgumentNullException.ThrowIfNull(Paths);
         this.PathsField = Paths;
         this.WatcherField = new IpcFileWatcher(Paths);
+
+        if (PostScriptCooldownMs < 0)
+        {
+            this.PostScriptCooldownMsField = 0;
+        }
+        else
+        {
+            this.PostScriptCooldownMsField = PostScriptCooldownMs;
+        }
     }
 
     #endregion
@@ -160,7 +180,9 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
                 ScriptToRun,
                 Settings,
                 null,
-                CancellationToken).ConfigureAwait(false);
+                CancellationToken,
+                AfterEffectsCliBridge.CloseNoSaveTimeoutSeconds,
+                SkipAbortDrainOnTimeout: true).ConfigureAwait(false);
 
             if (Result.IsOk)
             {
@@ -284,7 +306,13 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
                 await Task.Delay(AfterEffectsCliBridge.RestartPollIntervalMs, CancellationToken).ConfigureAwait(false);
             }
 
-            return !this.IsAfterEffectsRunning();
+            if (!this.IsAfterEffectsRunning())
+            {
+                await Task.Delay(AfterEffectsCliBridge.PostKillHandleReleaseDelayMs, CancellationToken).ConfigureAwait(false);
+                return true;
+            }
+
+            return false;
         }
         finally
         {
@@ -371,14 +399,37 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         }
     }
 
+    private async Task EnsureInterScriptCooldownAsync(
+        bool WasAeRunningBeforeLaunch,
+        CancellationToken CancellationToken)
+    {
+        if (!WasAeRunningBeforeLaunch
+            || this.PostScriptCooldownMsField <= 0
+            || this.LastScriptCompletedUtcField == DateTimeOffset.MinValue)
+        {
+            return;
+        }
+
+        TimeSpan Elapsed = DateTimeOffset.UtcNow - this.LastScriptCompletedUtcField;
+        TimeSpan Required = TimeSpan.FromMilliseconds(this.PostScriptCooldownMsField);
+        if (Elapsed < Required)
+        {
+            await Task.Delay(Required - Elapsed, CancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private async Task<StepResult> ExecuteScriptAndWaitAsync(
         string JobId,
         string ScriptPath,
         PipelineSettings Settings,
         IProgress<HeartbeatMessage>? HeartbeatProgress,
-        CancellationToken CancellationToken)
+        CancellationToken CancellationToken,
+        int? TimeoutSecondsOverride = null,
+        bool SkipAbortDrainOnTimeout = false)
     {
         bool WasAeRunningBeforeLaunch = this.IsAfterEffectsRunning();
+        await this.EnsureInterScriptCooldownAsync(WasAeRunningBeforeLaunch, CancellationToken).ConfigureAwait(false);
+
         string? WorkingDirectory = Path.GetDirectoryName(Settings.AfterEffectsExecutablePath);
         string EffectiveWorkingDirectory = this.PathsField.BaseDirectory;
         if (!string.IsNullOrWhiteSpace(WorkingDirectory))
@@ -408,6 +459,11 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         }
 
         int TimeoutSeconds = Settings.WatchdogTimeoutSeconds;
+        if (TimeoutSecondsOverride.HasValue && TimeoutSecondsOverride.Value > 0)
+        {
+            TimeoutSeconds = TimeoutSecondsOverride.Value;
+        }
+
         if (TimeoutSeconds <= 0)
         {
             TimeoutSeconds = AfterEffectsCliBridge.DefaultWatchdogTimeoutSeconds;
@@ -415,97 +471,122 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
 
         using (LaunchedProcess)
         {
-            Func<bool> ProcessAliveCheck = () =>
+            try
             {
-                if (File.Exists(this.PathsField.ResultFilePath))
+                Func<bool> ProcessAliveCheck = () =>
                 {
+                    if (File.Exists(this.PathsField.ResultFilePath))
+                    {
+                        return true;
+                    }
+
+                    if (WasAeRunningBeforeLaunch)
+                    {
+                        return this.IsAfterEffectsRunning();
+                    }
+
+                    if (LaunchedProcess.HasExited)
+                    {
+                        if (LaunchedProcess.ExitCode != 0 && !this.IsAfterEffectsRunning())
+                        {
+                            return false;
+                        }
+                    }
+
                     return true;
-                }
+                };
 
-                if (WasAeRunningBeforeLaunch)
+                using (HeartbeatWatchdog Watchdog = new HeartbeatWatchdog(
+                    TimeoutSeconds,
+                    CancellationToken,
+                    ProcessAliveCheck))
                 {
-                    return this.IsAfterEffectsRunning();
-                }
+                    Watchdog.Start();
 
-                if (LaunchedProcess.HasExited)
-                {
-                    if (LaunchedProcess.ExitCode != 0 && !this.IsAfterEffectsRunning())
+                    int HeartbeatReceivedFlag = 0;
+                    Action OnHeartbeat = () =>
                     {
-                        return false;
-                    }
-                }
-
-                return true;
-            };
-
-            using (HeartbeatWatchdog Watchdog = new HeartbeatWatchdog(
-                TimeoutSeconds,
-                CancellationToken,
-                ProcessAliveCheck))
-            {
-                Watchdog.Start();
-
-                try
-                {
-                    StepResult Result = await this.WatcherField.WaitForResultAsync(
-                        JobId,
-                        HeartbeatProgress,
-                        Watchdog.NotifyHeartbeat,
-                        Watchdog.Token).ConfigureAwait(false);
-
-                    Watchdog.MarkCompleted();
-                    return Result;
-                }
-                catch (OperationCanceledException)
-                {
-                    WatchdogTerminationReason Reason = Watchdog.TerminationReason;
-
-                    if (Reason == WatchdogTerminationReason.UserCancelled || CancellationToken.IsCancellationRequested)
-                    {
-                        await this.SignalAbortAndDrainAsync(JobId).ConfigureAwait(false);
-                        throw new OperationCanceledException(CancellationToken);
-                    }
-
-                    if (Reason == WatchdogTerminationReason.HeartbeatTimeout)
-                    {
-                        await this.SignalAbortAndDrainAsync(JobId).ConfigureAwait(false);
-                        return new StepResult
-                        {
-                            JobId = JobId,
-                            Status = "timeout",
-                            Error = $"Watchdog timeout after {TimeoutSeconds} seconds while waiting for After Effects job '{JobId}'.",
-                            Message = "Watchdog-Timeout"
-                        };
-                    }
-
-                    if (Reason == WatchdogTerminationReason.ProcessCrashed)
-                    {
-                        return new StepResult
-                        {
-                            JobId = JobId,
-                            Status = "crashed",
-                            Error = $"After Effects process terminated unexpectedly during job '{JobId}'.",
-                            Message = "AE-Crash"
-                        };
-                    }
-
-                    return new StepResult
-                    {
-                        JobId = JobId,
-                        Status = "error",
-                        Error = $"After Effects job '{JobId}' was interrupted unexpectedly."
+                        Interlocked.Exchange(ref HeartbeatReceivedFlag, 1);
+                        Watchdog.NotifyHeartbeat();
                     };
+
+                    try
+                    {
+                        StepResult Result = await this.WatcherField.WaitForResultAsync(
+                            JobId,
+                            HeartbeatProgress,
+                            OnHeartbeat,
+                            Watchdog.Token).ConfigureAwait(false);
+
+                        Watchdog.MarkCompleted();
+                        return Result;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        bool HasReceivedAnyHeartbeat = Volatile.Read(ref HeartbeatReceivedFlag) == 1;
+                        WatchdogTerminationReason Reason = Watchdog.TerminationReason;
+
+                        if (Reason == WatchdogTerminationReason.UserCancelled || CancellationToken.IsCancellationRequested)
+                        {
+                            await this.SignalAbortAndDrainAsync(JobId, HasReceivedAnyHeartbeat).ConfigureAwait(false);
+                            throw new OperationCanceledException(CancellationToken);
+                        }
+
+                        if (Reason == WatchdogTerminationReason.HeartbeatTimeout)
+                        {
+                            if (!SkipAbortDrainOnTimeout)
+                            {
+                                await this.SignalAbortAndDrainAsync(JobId, HasReceivedAnyHeartbeat).ConfigureAwait(false);
+                            }
+
+                            return new StepResult
+                            {
+                                JobId = JobId,
+                                Status = "timeout",
+                                Error = $"Watchdog timeout after {TimeoutSeconds} seconds while waiting for After Effects job '{JobId}'.",
+                                Message = "Watchdog-Timeout"
+                            };
+                        }
+
+                        if (Reason == WatchdogTerminationReason.ProcessCrashed)
+                        {
+                            return new StepResult
+                            {
+                                JobId = JobId,
+                                Status = "crashed",
+                                Error = $"After Effects process terminated unexpectedly during job '{JobId}'.",
+                                Message = "AE-Crash"
+                            };
+                        }
+
+                        return new StepResult
+                        {
+                            JobId = JobId,
+                            Status = "error",
+                            Error = $"After Effects job '{JobId}' was interrupted unexpectedly."
+                        };
+                    }
                 }
+            }
+            finally
+            {
+                this.LastScriptCompletedUtcField = DateTimeOffset.UtcNow;
             }
         }
     }
 
-    private async Task SignalAbortAndDrainAsync(string JobId)
+    private async Task SignalAbortAndDrainAsync(string JobId, bool HasReceivedAnyHeartbeat)
     {
         if (!this.IsAfterEffectsRunning())
         {
             AfterEffectsCliBridge.TryDeleteFile(this.PathsField.AbortFlagFilePath);
             return;
+        }
+
+        int WaitSeconds = AfterEffectsCliBridge.GracefulAbortWaitNoHeartbeatSeconds;
+        if (HasReceivedAnyHeartbeat)
+        {
+            WaitSeconds = AfterEffectsCliBridge.GracefulAbortWaitSeconds;
         }
 
         try
@@ -517,8 +598,7 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
                 this.Utf8NoBomEncodingField,
                 CancellationToken.None).ConfigureAwait(false);
 
-            using (CancellationTokenSource DrainCts = new CancellationTokenSource(
-                TimeSpan.FromSeconds(AfterEffectsCliBridge.GracefulAbortWaitSeconds)))
+            using (CancellationTokenSource DrainCts = new CancellationTokenSource(TimeSpan.FromSeconds(WaitSeconds)))
             {
                 try
                 {

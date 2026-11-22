@@ -624,6 +624,14 @@ public sealed class PipelineOrchestrator
 
         try
         {
+            this.ReportOrchestratorProgress(
+                Progress,
+                PipelineStepIds.Reverse,
+                "Rollback läuft...",
+                0.0,
+                "Schließe After-Effects-Projekt und stelle Original-Snapshot wieder her...",
+                false);
+
             RollbackSucceeded = await this.TransactionManagerField.RollbackTransactionAsync(
                 Manifest,
                 Settings,

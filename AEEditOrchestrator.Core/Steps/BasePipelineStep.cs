@@ -554,6 +554,11 @@ public abstract class BasePipelineStep : IPipelineStep
                 return;
             }
 
+            if (Value.TotalItems <= 0 && Value.CurrentIndex <= 0 && string.IsNullOrWhiteSpace(Value.Message))
+            {
+                return;
+            }
+
             int TotalItems = this.KnownTotalClipsField;
             if (Value.TotalItems > 0)
             {

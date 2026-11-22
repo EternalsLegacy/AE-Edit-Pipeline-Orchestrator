@@ -58,6 +58,7 @@ function runStep(job) {
             var clipSpan = Math.max(frameDur, clipOut - clipIn);
             var origIdx = clipLayer.index;
             var precompName = "Pre-comp " + clipNum + " - " + clipLayer.name;
+            var capturedSlot = savedSelection ? findCapturedLayerSlot(savedSelection, clipLayer) : -1;
 
             var precompItem = comp.layers.precompose([origIdx], precompName, true);
             var innerLayer = precompItem.layer(1);
@@ -70,8 +71,8 @@ function runStep(job) {
             newClipLayer.outPoint = clipOut;
             appendCommentTag(newClipLayer, clipTag);
 
-            if (savedSelection) {
-                replaceCapturedLayer(savedSelection, clipLayer, newClipLayer);
+            if (savedSelection && capturedSlot >= 0) {
+                replaceCapturedLayerAt(savedSelection, capturedSlot, newClipLayer);
             }
 
             processedCount++;

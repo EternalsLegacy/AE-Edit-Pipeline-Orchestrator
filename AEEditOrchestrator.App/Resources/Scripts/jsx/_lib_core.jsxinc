@@ -803,6 +803,23 @@ function isExcludedLayer(layer, totalLayers, excludedNames) {
     return isProtectedGlobalLayer(layer, totalLayers, excludedNames);
 }
 
+function isLayerValid(layer) {
+    if (!layer) {
+        return false;
+    }
+    try {
+        if (typeof isValid === "function") {
+            return Boolean(isValid(layer));
+        }
+    } catch (eValid) {}
+    try {
+        var idxTest = layer.index;
+        return idxTest >= 1;
+    } catch (eIdx) {
+        return false;
+    }
+}
+
 function captureSelectedLayers(comp) {
     var saved = [];
     if (!comp) {
@@ -815,15 +832,46 @@ function captureSelectedLayers(comp) {
     return saved;
 }
 
+function findCapturedLayerSlot(savedLayers, targetLayer) {
+    if (!savedLayers || !isLayerValid(targetLayer)) {
+        return -1;
+    }
+    for (var i = 0; i < savedLayers.length; i++) {
+        if (!isLayerValid(savedLayers[i])) {
+            continue;
+        }
+        try {
+            if (savedLayers[i] === targetLayer) {
+                return i;
+            }
+        } catch (eCmp) {}
+    }
+    return -1;
+}
+
+function replaceCapturedLayerAt(savedLayers, slotIndex, newLayer) {
+    if (!savedLayers || !isLayerValid(newLayer)) {
+        return;
+    }
+    if (typeof slotIndex === "number" && slotIndex >= 0 && slotIndex < savedLayers.length) {
+        savedLayers[slotIndex] = newLayer;
+    }
+}
+
 function replaceCapturedLayer(savedLayers, oldLayer, newLayer) {
-    if (!savedLayers || !newLayer) {
+    if (!savedLayers || !isLayerValid(newLayer) || !isLayerValid(oldLayer)) {
         return;
     }
     for (var i = 0; i < savedLayers.length; i++) {
-        if (savedLayers[i] === oldLayer) {
-            savedLayers[i] = newLayer;
-            return;
+        if (!isLayerValid(savedLayers[i])) {
+            continue;
         }
+        try {
+            if (savedLayers[i] === oldLayer) {
+                savedLayers[i] = newLayer;
+                return;
+            }
+        } catch (eCmp) {}
     }
 }
 
@@ -846,7 +894,7 @@ function restoreSelectedLayers(comp, savedLayers) {
     }
     for (var i = 0; i < savedLayers.length; i++) {
         try {
-            if (savedLayers[i]) {
+            if (isLayerValid(savedLayers[i])) {
                 savedLayers[i].selected = true;
             }
         } catch (e) {}

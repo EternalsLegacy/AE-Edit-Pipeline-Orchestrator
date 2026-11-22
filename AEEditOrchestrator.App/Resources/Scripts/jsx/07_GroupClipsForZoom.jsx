@@ -59,9 +59,16 @@ function runStep(job) {
             var clipSpan = Math.max(frameDur, clipOut - clipIn);
 
             var adjLayers = findAssociatedAdjustmentLayers(comp, baseClip, settings.excludedNames);
+            var capturedSlot = savedSelection ? findCapturedLayerSlot(savedSelection, baseClip) : -1;
             var groupIndices = [baseClip.index];
             for (var a = 0; a < adjLayers.length; a++) {
                 groupIndices.push(adjLayers[a].index);
+                if (savedSelection) {
+                    var adjSlot = findCapturedLayerSlot(savedSelection, adjLayers[a]);
+                    if (adjSlot >= 0) {
+                        savedSelection[adjSlot] = null;
+                    }
+                }
             }
             groupIndices.sort(function (x, y) {
                 return x - y;
@@ -83,8 +90,8 @@ function runStep(job) {
             groupLayer.outPoint = clipOut;
             groupLayer.comment = "[DONE_ZOOM_GROUP] " + clipTag;
 
-            if (savedSelection) {
-                replaceCapturedLayer(savedSelection, baseClip, groupLayer);
+            if (savedSelection && capturedSlot >= 0) {
+                replaceCapturedLayerAt(savedSelection, capturedSlot, groupLayer);
             }
 
             processedCount++;

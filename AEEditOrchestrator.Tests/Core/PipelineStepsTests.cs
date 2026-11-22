@@ -326,5 +326,58 @@ public sealed class PipelineStepsTests
         Assert.True(Step01.ValidateSettings(DefaultSettings, Preflight).IsValid);
     }
 
+    [Fact]
+    public async Task ExecuteAsyncSilentStartupAckHeartbeatDoesNotEmitUiProgressUpdate()
+    {
+        FakeAfterEffectsBridge Bridge = new FakeAfterEffectsBridge();
+        Bridge.JobHandler = (Payload, Settings, HeartbeatProgress, CancellationToken) =>
+        {
+            if (HeartbeatProgress != null)
+            {
+                HeartbeatProgress.Report(new HeartbeatMessage
+                {
+                    JobId = Payload.JobId,
+                    CurrentIndex = 0,
+                    TotalItems = 0,
+                    Message = string.Empty
+                });
+
+                HeartbeatProgress.Report(new HeartbeatMessage
+                {
+                    JobId = Payload.JobId,
+                    CurrentIndex = 1,
+                    TotalItems = 3,
+                    Message = "Pre-compose Clip 1 / 3"
+                });
+            }
+
+            return Task.FromResult(new StepResult
+            {
+                JobId = Payload.JobId,
+                Status = "ok",
+                TotalClips = 3,
+                ProcessedInBatch = 3,
+                HasMoreBatches = false
+            });
+        };
+
+        PrecomposeClipsStep Step = new PrecomposeClipsStep(Bridge);
+        RecordingProgress<PipelineProgressUpdate> Progress = new RecordingProgress<PipelineProgressUpdate>();
+        PipelineContext Context = new PipelineContext
+        {
+            Settings = new PipelineSettings(),
+            Progress = Progress,
+            StepNumber = 1,
+            TotalSteps = 1
+        };
+
+        StepExecutionResult Result = await Step.ExecuteAsync(Context, CancellationToken.None);
+
+        Assert.True(Result.Succeeded);
+        Assert.Equal(3, Progress.Items.Count);
+        Assert.DoesNotContain(Progress.Items, Update => string.IsNullOrEmpty(Update.Message));
+        Assert.Contains(Progress.Items, Update => Update.Message == "Pre-compose Clip 1 / 3");
+    }
+
     #endregion
 }

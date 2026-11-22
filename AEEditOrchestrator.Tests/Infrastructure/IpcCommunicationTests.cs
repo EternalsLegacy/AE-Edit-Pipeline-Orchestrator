@@ -314,6 +314,74 @@ public sealed class IpcCommunicationTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(Result.Error));
     }
 
+    [Fact]
+    public async Task IpcFileWatcherTriggersOnHeartbeatReceivedForSilentStartupAckHeartbeat()
+    {
+        IpcPaths Paths = new IpcPaths(this.TempIpcDirField, this.TempJsxDirField);
+        IpcFileWatcher Watcher = new IpcFileWatcher(Paths, PollIntervalMs: 30);
+
+        int CallbackInvocations = 0;
+        List<HeartbeatMessage> ReceivedHeartbeats = new List<HeartbeatMessage>();
+        InlineHeartbeatProgress ProgressReporter = new InlineHeartbeatProgress((HeartbeatMessage Message) =>
+        {
+            lock (ReceivedHeartbeats)
+            {
+                ReceivedHeartbeats.Add(Message);
+            }
+        });
+
+        using (CancellationTokenSource TimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            Task<StepResult> WaitTask = Watcher.WaitForResultAsync(
+                "job-ack-1",
+                ProgressReporter,
+                () =>
+                {
+                    Interlocked.Increment(ref CallbackInvocations);
+                },
+                TimeoutCts.Token);
+
+            await Task.Delay(60, TimeoutCts.Token);
+
+            HeartbeatMessage AckHeartbeat = new HeartbeatMessage
+            {
+                JobId = "job-ack-1",
+                TimestampUtc = "2026-11-22T12:00:00Z",
+                CurrentIndex = 0,
+                TotalItems = 0,
+                Message = string.Empty
+            };
+            await File.WriteAllTextAsync(
+                Paths.HeartbeatFilePath,
+                JsonSerializer.Serialize(AckHeartbeat, IpcJsonOptions.Default),
+                new UTF8Encoding(false),
+                TimeoutCts.Token);
+
+            await Task.Delay(80, TimeoutCts.Token);
+
+            StepResult ExpectedResult = new StepResult
+            {
+                JobId = "job-ack-1",
+                Status = "ok",
+                TotalClips = 1,
+                ProcessedInBatch = 1,
+                HasMoreBatches = false
+            };
+            await File.WriteAllTextAsync(
+                Paths.ResultFilePath,
+                JsonSerializer.Serialize(ExpectedResult, IpcJsonOptions.Default),
+                new UTF8Encoding(false),
+                TimeoutCts.Token);
+
+            StepResult ActualResult = await WaitTask;
+
+            Assert.True(ActualResult.IsOk);
+            Assert.Equal(1, CallbackInvocations);
+            Assert.Single(ReceivedHeartbeats);
+            Assert.Equal(string.Empty, ReceivedHeartbeats[0].Message);
+        }
+    }
+
     #endregion
 
     #region Nested Types

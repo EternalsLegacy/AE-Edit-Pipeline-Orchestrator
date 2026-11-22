@@ -10,6 +10,21 @@
     var jobId = "";
     var job = null;
     var suppressDialogsActive = false;
+    var cleanupDone = false;
+
+    function performCleanup() {
+        if (cleanupDone) {
+            return;
+        }
+        cleanupDone = true;
+        if (suppressDialogsActive) {
+            try {
+                app.endSuppressDialogs(false);
+            } catch (eSupEnd) {}
+            suppressDialogsActive = false;
+        }
+        closeAllUndoGroups();
+    }
 
     try {
         job = readJobJson();
@@ -22,6 +37,9 @@
             throw new Error("job.scriptFile ist leer.");
         }
 
+        // Silent startup acknowledgement so C# knows AE accepted and started the script.
+        writeHeartbeat(jobId, 0, 0, "");
+
         var runnerFile = new File($.fileName);
         var runnerDir = runnerFile.parent;
 
@@ -33,9 +51,11 @@
                 throw new Error("Projekt wurde noch nie gespeichert und hat keinen Dateipfad.");
             }
             app.project.save();
-            writeResultJson(buildOkResult(jobId, getSafeActiveComp(), {
+            var saveRes = buildOkResult(jobId, getSafeActiveComp(), {
                 message: "Projekt gespeichert."
-            }));
+            });
+            performCleanup();
+            writeResultJson(saveRes);
             return;
         }
 
@@ -64,9 +84,11 @@
                 } catch (eSup2) {}
                 suppressDialogsActive = false;
             }
-            writeResultJson(buildOkResult(jobId, getSafeActiveComp(), {
+            var openRes = buildOkResult(jobId, getSafeActiveComp(), {
                 message: "Projekt geöffnet: " + openFile.fsName
-            }));
+            });
+            performCleanup();
+            writeResultJson(openRes);
             return;
         }
 
@@ -74,11 +96,13 @@
             if (app.project) {
                 app.project.close(CloseOptions.DO_NOT_SAVE_CHANGES);
             }
-            writeResultJson(buildOkResult(jobId, null, {
+            var closeRes = buildOkResult(jobId, null, {
                 projectPath: "",
                 compositionName: "",
                 message: "Projekt ohne Speichern geschlossen."
-            }));
+            });
+            performCleanup();
+            writeResultJson(closeRes);
             return;
         }
 
@@ -122,29 +146,35 @@
         }
 
         if (result.status === "ok") {
-            if (job.purgeAfterBatch) {
-                try {
-                    app.purge(PurgeTarget.ALL_CACHES);
-                } catch (ePurge) {}
-            }
-            if (job.saveAfterBatch && app.project && app.project.file !== null) {
-                app.project.save();
+            if (isAbortRequested()) {
+                result = buildAbortedResult(jobId, getSafeActiveComp(), "Abbruch angefordert nach Batch-Verarbeitung.");
+            } else {
+                var completedCount = (result.processedInBatch || 0) + (result.skippedInBatch || 0);
+                var totalClipCount = result.totalClips || 0;
+                if (job.purgeAfterBatch) {
+                    writeHeartbeat(jobId, completedCount, totalClipCount, "Leere AE-Cache nach Batch...");
+                    try {
+                        app.purge(PurgeTarget.ALL_CACHES);
+                    } catch (ePurge) {}
+                }
+                if (job.saveAfterBatch && app.project && app.project.file !== null) {
+                    writeHeartbeat(jobId, completedCount, totalClipCount, "Speichere AE-Projekt nach Batch...");
+                    app.project.save();
+                }
             }
         }
 
+        performCleanup();
         writeResultJson(result);
     } catch (err) {
-        closeAllUndoGroups();
+        performCleanup();
         var errResult = buildErrorResult(jobId, err, "Fehler im Runner");
         try {
             writeResultJson(errResult);
         } catch (eWrite) {}
     } finally {
-        if (suppressDialogsActive) {
-            try {
-                app.endSuppressDialogs(false);
-            } catch (eSupEnd) {}
+        if (!cleanupDone) {
+            performCleanup();
         }
-        closeAllUndoGroups();
     }
 })();
