@@ -7,6 +7,10 @@ public interface IAfterEffectsBridge
 {
     #region Public Methods
 
+    void BeginSession();
+
+    Task EndSessionAsync(CancellationToken CancellationToken = default);
+
     bool IsAfterEffectsRunning();
 
     Task<StepResult> ExecuteJobAsync(

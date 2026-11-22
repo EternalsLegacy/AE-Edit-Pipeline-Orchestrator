@@ -51,6 +51,8 @@ public sealed class IpcCommunicationTests : IDisposable
         Assert.Equal(Path.Combine(ExpectedLocalAppData, "heartbeat.json"), DefaultPaths.HeartbeatFilePath);
         Assert.Equal(Path.Combine(ExpectedLocalAppData, "result.json"), DefaultPaths.ResultFilePath);
         Assert.Equal(Path.Combine(ExpectedLocalAppData, "abort.flag"), DefaultPaths.AbortFlagFilePath);
+        Assert.Equal(Path.Combine(ExpectedLocalAppData, "session_keepalive.flag"), DefaultPaths.SessionKeepAliveFilePath);
+        Assert.Equal(Path.Combine(ExpectedLocalAppData, "session_ended.flag"), DefaultPaths.SessionEndedFilePath);
         Assert.Equal(Path.Combine(AppContext.BaseDirectory, "Resources", "Scripts", "jsx"), DefaultPaths.JsxScriptsDirectory);
         Assert.Equal(Path.Combine(DefaultPaths.JsxScriptsDirectory, "runner.jsx"), DefaultPaths.RunnerScriptPath);
         Assert.Equal(Path.Combine(DefaultPaths.JsxScriptsDirectory, "close_no_save.jsx"), DefaultPaths.CloseNoSaveScriptPath);
@@ -58,6 +60,8 @@ public sealed class IpcCommunicationTests : IDisposable
         IpcPaths CustomPaths = new IpcPaths(this.TempIpcDirField, this.TempJsxDirField);
         Assert.Equal(Path.GetFullPath(this.TempIpcDirField), CustomPaths.BaseDirectory);
         Assert.Equal(Path.Combine(Path.GetFullPath(this.TempIpcDirField), "job.json"), CustomPaths.JobFilePath);
+        Assert.Equal(Path.Combine(Path.GetFullPath(this.TempIpcDirField), "session_keepalive.flag"), CustomPaths.SessionKeepAliveFilePath);
+        Assert.Equal(Path.Combine(Path.GetFullPath(this.TempIpcDirField), "session_ended.flag"), CustomPaths.SessionEndedFilePath);
         Assert.Equal(Path.Combine(Path.GetFullPath(this.TempJsxDirField), "runner.jsx"), CustomPaths.RunnerScriptPath);
         Assert.Equal(Path.Combine(Path.GetFullPath(this.TempJsxDirField), "close_no_save.jsx"), CustomPaths.CloseNoSaveScriptPath);
     }
@@ -380,6 +384,35 @@ public sealed class IpcCommunicationTests : IDisposable
             Assert.Single(ReceivedHeartbeats);
             Assert.Equal(string.Empty, ReceivedHeartbeats[0].Message);
         }
+    }
+
+    [Fact]
+    public async Task AfterEffectsCliBridgeSessionFlagsRespectNestingAndPreserveKeepAliveOnCleanup()
+    {
+        IpcPaths Paths = new IpcPaths(this.TempIpcDirField, this.TempJsxDirField);
+        AfterEffectsCliBridge Bridge = new AfterEffectsCliBridge(Paths);
+
+        Bridge.BeginSession();
+        Assert.True(File.Exists(Paths.SessionKeepAliveFilePath));
+
+        await File.WriteAllTextAsync(Paths.JobFilePath, "{}", new UTF8Encoding(false));
+        Bridge.CleanupIpcFiles();
+
+        Assert.False(File.Exists(Paths.JobFilePath));
+        Assert.True(File.Exists(Paths.SessionKeepAliveFilePath));
+
+        Bridge.BeginSession();
+        Assert.True(File.Exists(Paths.SessionKeepAliveFilePath));
+
+        await Bridge.EndSessionAsync();
+        Assert.True(File.Exists(Paths.SessionKeepAliveFilePath));
+
+        await Bridge.EndSessionAsync();
+        Assert.False(File.Exists(Paths.SessionKeepAliveFilePath));
+
+        Bridge.CleanupIpcFiles();
+        Assert.False(File.Exists(Paths.SessionKeepAliveFilePath));
+        Assert.False(File.Exists(Paths.SessionEndedFilePath));
     }
 
     #endregion

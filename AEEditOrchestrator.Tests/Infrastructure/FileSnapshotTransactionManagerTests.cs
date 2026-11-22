@@ -159,7 +159,13 @@ public sealed class FileSnapshotTransactionManagerTests : IDisposable
         Assert.Equal(this.OriginalProjectBytesField, RestoredBytes);
 
         Assert.Equal(
-            new List<string> { nameof(Bridge.CloseProjectWithoutSavingAsync), nameof(Bridge.OpenProjectAsync) },
+            new List<string>
+            {
+                nameof(Bridge.BeginSession),
+                nameof(Bridge.CloseProjectWithoutSavingAsync),
+                nameof(Bridge.OpenProjectAsync),
+                nameof(Bridge.EndSessionAsync)
+            },
             Bridge.RecordedCalls);
         Assert.Single(Bridge.OpenedProjectPaths);
         Assert.Equal(Path.GetFullPath(this.ProjectFilePathField), Bridge.OpenedProjectPaths[0]);
@@ -189,9 +195,11 @@ public sealed class FileSnapshotTransactionManagerTests : IDisposable
         Assert.Equal(
             new List<string>
             {
+                nameof(Bridge.BeginSession),
                 nameof(Bridge.CloseProjectWithoutSavingAsync),
                 nameof(Bridge.TryRestartAfterEffectsAsync),
-                nameof(Bridge.OpenProjectAsync)
+                nameof(Bridge.OpenProjectAsync),
+                nameof(Bridge.EndSessionAsync)
             },
             Bridge.RecordedCalls);
         Assert.Equal(this.OriginalProjectBytesField, await File.ReadAllBytesAsync(this.ProjectFilePathField));

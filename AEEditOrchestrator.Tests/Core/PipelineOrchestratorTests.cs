@@ -475,5 +475,53 @@ public sealed class PipelineOrchestratorTests
         Assert.Equal(1, Bridge.CleanupCallCount);
     }
 
+    [Fact]
+    public async Task ExecutePipelineAsyncCallsBeginAndEndSessionOnceOnSuccessAndFailure()
+    {
+        FakeAfterEffectsBridge SuccessBridge = new FakeAfterEffectsBridge();
+        FakeTransactionManager SuccessTxManager = new FakeTransactionManager();
+        PipelineOrchestrator SuccessOrchestrator = PipelineOrchestratorTests.CreateOrchestrator(SuccessBridge, SuccessTxManager);
+
+        PipelineExecutionResult SuccessResult = await SuccessOrchestrator.ExecutePipelineAsync(
+            new PipelineSettings(),
+            new string[] { PipelineStepIds.Precomp },
+            null,
+            CancellationToken.None);
+
+        Assert.True(SuccessResult.Succeeded);
+        Assert.Equal(1, SuccessBridge.BeginSessionCallCount);
+        Assert.Equal(1, SuccessBridge.EndSessionCallCount);
+
+        FakeAfterEffectsBridge FailBridge = new FakeAfterEffectsBridge();
+        FailBridge.JobHandler = (Payload, Settings, HeartbeatProgress, CancellationToken) =>
+        {
+            if (Payload.ScriptFile == "02_PrecomposeClips.jsx")
+            {
+                return Task.FromResult(new StepResult
+                {
+                    JobId = Payload.JobId,
+                    Status = "error",
+                    Error = "Simulierter Step-Fehler"
+                });
+            }
+
+            return Task.FromResult(FakeAfterEffectsBridge.CreateDefaultOkResult(Payload));
+        };
+
+        FakeTransactionManager FailTxManager = new FakeTransactionManager();
+        PipelineOrchestrator FailOrchestrator = PipelineOrchestratorTests.CreateOrchestrator(FailBridge, FailTxManager);
+
+        PipelineExecutionResult FailResult = await FailOrchestrator.ExecutePipelineAsync(
+            new PipelineSettings(),
+            new string[] { PipelineStepIds.Precomp },
+            null,
+            CancellationToken.None);
+
+        Assert.False(FailResult.Succeeded);
+        Assert.True(FailResult.WasRolledBack);
+        Assert.Equal(1, FailBridge.BeginSessionCallCount);
+        Assert.Equal(1, FailBridge.EndSessionCallCount);
+    }
+
     #endregion
 }

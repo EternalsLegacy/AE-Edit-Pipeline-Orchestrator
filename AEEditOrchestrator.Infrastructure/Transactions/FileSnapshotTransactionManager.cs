@@ -370,91 +370,99 @@ public sealed class FileSnapshotTransactionManager : ITransactionManager
             return false;
         }
 
-        // Step A: Close project in After Effects without saving to release file lock.
-        bool ClosedCleanly = await this.BridgeField.CloseProjectWithoutSavingAsync(Settings, CancellationToken).ConfigureAwait(false);
-        if (!ClosedCleanly)
-        {
-            await this.BridgeField.TryRestartAfterEffectsAsync(Settings, CancellationToken).ConfigureAwait(false);
-        }
-
-        // Step B: Copy to temp file in target dir, move atomically, verify restored hash.
-
-        if (string.IsNullOrWhiteSpace(Manifest.OriginalProjectPath))
-        {
-            return false;
-        }
-
-        string FullTargetPath = Path.GetFullPath(Manifest.OriginalProjectPath);
-        string? TargetDirectory = Path.GetDirectoryName(FullTargetPath);
-        if (string.IsNullOrWhiteSpace(TargetDirectory))
-        {
-            return false;
-        }
-
-        Directory.CreateDirectory(TargetDirectory);
-
-        string TempRestorePath = Path.Combine(
-            TargetDirectory,
-            string.Concat(".restore_", Guid.NewGuid().ToString("N"), ".tmp"));
-
+        this.BridgeField.BeginSession();
         try
         {
-            await FileSnapshotTransactionManager.CopyFileSharedAsync(
-                Manifest.InitialSnapshotFullPath,
-                TempRestorePath,
-                CancellationToken).ConfigureAwait(false);
+            // Step A: Close project in After Effects without saving to release file lock.
+            bool ClosedCleanly = await this.BridgeField.CloseProjectWithoutSavingAsync(Settings, CancellationToken).ConfigureAwait(false);
+            if (!ClosedCleanly)
+            {
+                await this.BridgeField.TryRestartAfterEffectsAsync(Settings, CancellationToken).ConfigureAwait(false);
+            }
 
-            string TempHash = await FileSnapshotTransactionManager.ComputeSha256HexAsync(
-                TempRestorePath,
-                CancellationToken).ConfigureAwait(false);
+            // Step B: Copy to temp file in target dir, move atomically, verify restored hash.
 
-            if (!string.Equals(TempHash, Manifest.InitialSnapshotSha256, StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(Manifest.OriginalProjectPath))
             {
                 return false;
             }
 
-            await FileSnapshotTransactionManager.MoveFileWithRetryAsync(
-                TempRestorePath,
-                FullTargetPath,
-                CancellationToken).ConfigureAwait(false);
-
-            string RestoredHash = await FileSnapshotTransactionManager.ComputeSha256HexAsync(
-                FullTargetPath,
-                CancellationToken).ConfigureAwait(false);
-
-            if (!string.Equals(RestoredHash, Manifest.InitialSnapshotSha256, StringComparison.OrdinalIgnoreCase))
+            string FullTargetPath = Path.GetFullPath(Manifest.OriginalProjectPath);
+            string? TargetDirectory = Path.GetDirectoryName(FullTargetPath);
+            if (string.IsNullOrWhiteSpace(TargetDirectory))
             {
-                if (MarkAsRolledBack)
+                return false;
+            }
+
+            Directory.CreateDirectory(TargetDirectory);
+
+            string TempRestorePath = Path.Combine(
+                TargetDirectory,
+                string.Concat(".restore_", Guid.NewGuid().ToString("N"), ".tmp"));
+
+            try
+            {
+                await FileSnapshotTransactionManager.CopyFileSharedAsync(
+                    Manifest.InitialSnapshotFullPath,
+                    TempRestorePath,
+                    CancellationToken).ConfigureAwait(false);
+
+                string TempHash = await FileSnapshotTransactionManager.ComputeSha256HexAsync(
+                    TempRestorePath,
+                    CancellationToken).ConfigureAwait(false);
+
+                if (!string.Equals(TempHash, Manifest.InitialSnapshotSha256, StringComparison.OrdinalIgnoreCase))
                 {
-                    Manifest.Status = TransactionStatus.Failed;
-                    Manifest.CompletedAtUtc = DateTimeOffset.UtcNow;
-                    Manifest.Notes = "Rollback failed: restored project file SHA-256 verification failed.";
-                    await this.SaveManifestAtomicAsync(Manifest, CancellationToken).ConfigureAwait(false);
+                    return false;
                 }
 
-                return false;
+                await FileSnapshotTransactionManager.MoveFileWithRetryAsync(
+                    TempRestorePath,
+                    FullTargetPath,
+                    CancellationToken).ConfigureAwait(false);
+
+                string RestoredHash = await FileSnapshotTransactionManager.ComputeSha256HexAsync(
+                    FullTargetPath,
+                    CancellationToken).ConfigureAwait(false);
+
+                if (!string.Equals(RestoredHash, Manifest.InitialSnapshotSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (MarkAsRolledBack)
+                    {
+                        Manifest.Status = TransactionStatus.Failed;
+                        Manifest.CompletedAtUtc = DateTimeOffset.UtcNow;
+                        Manifest.Notes = "Rollback failed: restored project file SHA-256 verification failed.";
+                        await this.SaveManifestAtomicAsync(Manifest, CancellationToken).ConfigureAwait(false);
+                    }
+
+                    return false;
+                }
             }
+            finally
+            {
+                FileSnapshotTransactionManager.TryDeleteFile(TempRestorePath);
+            }
+
+            if (MarkAsRolledBack)
+            {
+                Manifest.Status = TransactionStatus.RolledBack;
+                Manifest.CompletedAtUtc = DateTimeOffset.UtcNow;
+                Manifest.Notes = RollbackReason ?? string.Empty;
+                await this.SaveManifestAtomicAsync(Manifest, CancellationToken).ConfigureAwait(false);
+            }
+
+            // Step C: Instruct After Effects to reopen the restored project.
+            bool Reopened = await this.BridgeField.OpenProjectAsync(
+                FullTargetPath,
+                Settings,
+                CancellationToken).ConfigureAwait(false);
+
+            return Reopened;
         }
         finally
         {
-            FileSnapshotTransactionManager.TryDeleteFile(TempRestorePath);
+            await this.BridgeField.EndSessionAsync(CancellationToken.None).ConfigureAwait(false);
         }
-
-        if (MarkAsRolledBack)
-        {
-            Manifest.Status = TransactionStatus.RolledBack;
-            Manifest.CompletedAtUtc = DateTimeOffset.UtcNow;
-            Manifest.Notes = RollbackReason ?? string.Empty;
-            await this.SaveManifestAtomicAsync(Manifest, CancellationToken).ConfigureAwait(false);
-        }
-
-        // Step C: Instruct After Effects to reopen the restored project.
-        bool Reopened = await this.BridgeField.OpenProjectAsync(
-            FullTargetPath,
-            Settings,
-            CancellationToken).ConfigureAwait(false);
-
-        return Reopened;
     }
 
     private async Task SaveManifestAtomicAsync(TransactionManifest Manifest, CancellationToken CancellationToken)

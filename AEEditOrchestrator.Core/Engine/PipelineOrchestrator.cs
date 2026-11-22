@@ -216,311 +216,320 @@ public sealed class PipelineOrchestrator
             };
         }
 
-        ProjectPreflightState PreflightState;
+        this.BridgeField.BeginSession();
         try
         {
-            PreflightState = await this.RunPreflightAsync(Settings, Progress, CancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            this.BridgeField.CleanupIpcFiles();
-            return new PipelineExecutionResult
+            ProjectPreflightState PreflightState;
+            try
             {
-                Succeeded = false,
-                WasCancelled = true,
-                WasRolledBack = false,
-                ErrorMessage = "Pipeline-Ausführung während des Preflights abgebrochen.",
-                Message = "Abgebrochen."
-            };
-        }
-
-        if (!PreflightState.IsReady)
-        {
-            string NotReadyReason = PipelineOrchestrator.BuildNotReadyReason(PreflightState);
-            this.ReportOrchestratorProgress(
-                Progress,
-                PipelineStepIds.Preflight,
-                "Preflight-Prüfung",
-                0.0,
-                NotReadyReason,
-                true);
-
-            return new PipelineExecutionResult
+                PreflightState = await this.RunPreflightAsync(Settings, Progress, CancellationToken);
+            }
+            catch (OperationCanceledException)
             {
-                Succeeded = false,
-                WasCancelled = false,
-                WasRolledBack = false,
-                ErrorMessage = NotReadyReason,
-                Message = "Preflight fehlgeschlagen."
-            };
-        }
+                this.BridgeField.CleanupIpcFiles();
+                return new PipelineExecutionResult
+                {
+                    Succeeded = false,
+                    WasCancelled = true,
+                    WasRolledBack = false,
+                    ErrorMessage = "Pipeline-Ausführung während des Preflights abgebrochen.",
+                    Message = "Abgebrochen."
+                };
+            }
 
-        ValidationResult SelectionValidation = this.ValidatorField.ValidateSelection(
-            SelectedStepIds,
-            Settings,
-            PreflightState);
-
-        if (!SelectionValidation.IsValid)
-        {
-            string ValidationError = string.Join(" ", SelectionValidation.Errors);
-            this.ReportOrchestratorProgress(
-                Progress,
-                PipelineStepIds.Preflight,
-                "Abhängigkeitsprüfung",
-                0.0,
-                ValidationError,
-                true);
-
-            return new PipelineExecutionResult
+            if (!PreflightState.IsReady)
             {
-                Succeeded = false,
-                WasCancelled = false,
-                WasRolledBack = false,
-                ErrorMessage = ValidationError,
-                Message = "Schritt-Auswahl ungültig."
-            };
-        }
+                string NotReadyReason = PipelineOrchestrator.BuildNotReadyReason(PreflightState);
+                this.ReportOrchestratorProgress(
+                    Progress,
+                    PipelineStepIds.Preflight,
+                    "Preflight-Prüfung",
+                    0.0,
+                    NotReadyReason,
+                    true);
 
-        IReadOnlyList<string> RequiredPresets = this.ValidatorField.GetEffectiveRequiredPresets(
-            SelectedStepIds,
-            Settings);
-
-        List<string> MissingSelectedPresets = PipelineOrchestrator.FindMissingRequiredPresets(
-            RequiredPresets,
-            PreflightState.MissingPresets);
-
-        if (MissingSelectedPresets.Count > 0)
-        {
-            string PresetError = $"Folgende für die gewählten Schritte benötigten Presets fehlen: {string.Join(", ", MissingSelectedPresets)}.";
-            this.ReportOrchestratorProgress(
-                Progress,
-                PipelineStepIds.Preflight,
-                "Preset-Prüfung",
-                0.0,
-                PresetError,
-                true);
-
-            return new PipelineExecutionResult
-            {
-                Succeeded = false,
-                WasCancelled = false,
-                WasRolledBack = false,
-                ErrorMessage = PresetError,
-                Message = "Fehlende Presets."
-            };
-        }
-
-        List<IPipelineStep> OrderedSteps = this.ResolveOrderedSteps(SelectedStepIds);
-        List<string> OrderedStepIds = new List<string>();
-        foreach (IPipelineStep OrderedStep in OrderedSteps)
-        {
-            OrderedStepIds.Add(OrderedStep.StepId);
-        }
-
-        TransactionManifest Manifest;
-        try
-        {
-            CancellationToken.ThrowIfCancellationRequested();
-
-            bool SavedBeforeSnapshot = await this.BridgeField.SaveProjectAsync(Settings, CancellationToken);
-            if (!SavedBeforeSnapshot)
-            {
                 return new PipelineExecutionResult
                 {
                     Succeeded = false,
                     WasCancelled = false,
                     WasRolledBack = false,
-                    ErrorMessage = "Projekt konnte vor dem Snapshot nicht gespeichert werden.",
-                    Message = "Speichern fehlgeschlagen."
+                    ErrorMessage = NotReadyReason,
+                    Message = "Preflight fehlgeschlagen."
                 };
             }
 
-            Manifest = await this.TransactionManagerField.BeginTransactionAsync(
-                PreflightState.ProjectPath,
-                OrderedStepIds,
-                CancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            this.BridgeField.CleanupIpcFiles();
-            return new PipelineExecutionResult
-            {
-                Succeeded = false,
-                WasCancelled = true,
-                WasRolledBack = false,
-                ErrorMessage = "Pipeline-Ausführung vor Transaktionsbeginn abgebrochen.",
-                Message = "Abgebrochen."
-            };
-        }
-        catch (Exception Ex)
-        {
-            this.BridgeField.CleanupIpcFiles();
-            return new PipelineExecutionResult
-            {
-                Succeeded = false,
-                WasCancelled = false,
-                WasRolledBack = false,
-                ErrorMessage = $"Transaktion konnte nicht gestartet werden: {Ex.Message}",
-                Message = "Transaktionsstart fehlgeschlagen."
-            };
-        }
+            ValidationResult SelectionValidation = this.ValidatorField.ValidateSelection(
+                SelectedStepIds,
+                Settings,
+                PreflightState);
 
-        List<StepExecutionResult> StepResults = new List<StepExecutionResult>();
-        ProjectPreflightState CurrentPreflightState = PreflightState;
-        bool HasCompletedStage1Step = false;
-        bool MilestoneCreated = false;
+            if (!SelectionValidation.IsValid)
+            {
+                string ValidationError = string.Join(" ", SelectionValidation.Errors);
+                this.ReportOrchestratorProgress(
+                    Progress,
+                    PipelineStepIds.Preflight,
+                    "Abhängigkeitsprüfung",
+                    0.0,
+                    ValidationError,
+                    true);
 
-        try
-        {
-            for (int Index = 0; Index < OrderedSteps.Count; Index++)
+                return new PipelineExecutionResult
+                {
+                    Succeeded = false,
+                    WasCancelled = false,
+                    WasRolledBack = false,
+                    ErrorMessage = ValidationError,
+                    Message = "Schritt-Auswahl ungültig."
+                };
+            }
+
+            IReadOnlyList<string> RequiredPresets = this.ValidatorField.GetEffectiveRequiredPresets(
+                SelectedStepIds,
+                Settings);
+
+            List<string> MissingSelectedPresets = PipelineOrchestrator.FindMissingRequiredPresets(
+                RequiredPresets,
+                PreflightState.MissingPresets);
+
+            if (MissingSelectedPresets.Count > 0)
+            {
+                string PresetError = $"Folgende für die gewählten Schritte benötigten Presets fehlen: {string.Join(", ", MissingSelectedPresets)}.";
+                this.ReportOrchestratorProgress(
+                    Progress,
+                    PipelineStepIds.Preflight,
+                    "Preset-Prüfung",
+                    0.0,
+                    PresetError,
+                    true);
+
+                return new PipelineExecutionResult
+                {
+                    Succeeded = false,
+                    WasCancelled = false,
+                    WasRolledBack = false,
+                    ErrorMessage = PresetError,
+                    Message = "Fehlende Presets."
+                };
+            }
+
+            List<IPipelineStep> OrderedSteps = this.ResolveOrderedSteps(SelectedStepIds);
+            List<string> OrderedStepIds = new List<string>();
+            foreach (IPipelineStep OrderedStep in OrderedSteps)
+            {
+                OrderedStepIds.Add(OrderedStep.StepId);
+            }
+
+            TransactionManifest Manifest;
+            try
             {
                 CancellationToken.ThrowIfCancellationRequested();
 
-                IPipelineStep CurrentStep = OrderedSteps[Index];
-
-                if (!MilestoneCreated
-                    && HasCompletedStage1Step
-                    && CurrentStep.ExecutionOrder >= PipelineOrchestrator.Stage2MinExecutionOrder)
+                bool SavedBeforeSnapshot = await this.BridgeField.SaveProjectAsync(Settings, CancellationToken);
+                if (!SavedBeforeSnapshot)
                 {
-                    this.ReportOrchestratorProgress(
-                        Progress,
-                        CurrentStep.StepId,
-                        "Meilenstein-Snapshot",
-                        ((double)Index * 100.0) / OrderedSteps.Count,
-                        "Speichere Projektstand und erstelle Stage-1-Meilenstein-Snapshot...",
-                        false);
-
-                    bool SavedForMilestone = await this.BridgeField.SaveProjectAsync(Settings, CancellationToken);
-                    if (!SavedForMilestone)
+                    return new PipelineExecutionResult
                     {
+                        Succeeded = false,
+                        WasCancelled = false,
+                        WasRolledBack = false,
+                        ErrorMessage = "Projekt konnte vor dem Snapshot nicht gespeichert werden.",
+                        Message = "Speichern fehlgeschlagen."
+                    };
+                }
+
+                Manifest = await this.TransactionManagerField.BeginTransactionAsync(
+                    PreflightState.ProjectPath,
+                    OrderedStepIds,
+                    CancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                this.BridgeField.CleanupIpcFiles();
+                return new PipelineExecutionResult
+                {
+                    Succeeded = false,
+                    WasCancelled = true,
+                    WasRolledBack = false,
+                    ErrorMessage = "Pipeline-Ausführung vor Transaktionsbeginn abgebrochen.",
+                    Message = "Abgebrochen."
+                };
+            }
+            catch (Exception Ex)
+            {
+                this.BridgeField.CleanupIpcFiles();
+                return new PipelineExecutionResult
+                {
+                    Succeeded = false,
+                    WasCancelled = false,
+                    WasRolledBack = false,
+                    ErrorMessage = $"Transaktion konnte nicht gestartet werden: {Ex.Message}",
+                    Message = "Transaktionsstart fehlgeschlagen."
+                };
+            }
+
+            List<StepExecutionResult> StepResults = new List<StepExecutionResult>();
+            ProjectPreflightState CurrentPreflightState = PreflightState;
+            bool HasCompletedStage1Step = false;
+            bool MilestoneCreated = false;
+
+            try
+            {
+                for (int Index = 0; Index < OrderedSteps.Count; Index++)
+                {
+                    CancellationToken.ThrowIfCancellationRequested();
+
+                    IPipelineStep CurrentStep = OrderedSteps[Index];
+
+                    if (!MilestoneCreated
+                        && HasCompletedStage1Step
+                        && CurrentStep.ExecutionOrder >= PipelineOrchestrator.Stage2MinExecutionOrder)
+                    {
+                        this.ReportOrchestratorProgress(
+                            Progress,
+                            CurrentStep.StepId,
+                            "Meilenstein-Snapshot",
+                            ((double)Index * 100.0) / OrderedSteps.Count,
+                            "Speichere Projektstand und erstelle Stage-1-Meilenstein-Snapshot...",
+                            false);
+
+                        bool SavedForMilestone = await this.BridgeField.SaveProjectAsync(Settings, CancellationToken);
+                        if (!SavedForMilestone)
+                        {
+                            return await this.RollbackAndBuildFailureResultAsync(
+                                Manifest,
+                                Settings,
+                                "Projekt konnte vor dem Stage-1-Meilenstein-Snapshot nicht gespeichert werden.",
+                                false,
+                                StepResults,
+                                Progress);
+                        }
+
+                        await this.TransactionManagerField.CreateMilestoneSnapshotAsync(
+                            Manifest,
+                            PipelineOrchestrator.Stage1MilestoneName,
+                            PipelineOrchestrator.Stage1MilestoneFileName,
+                            CancellationToken);
+
+                        MilestoneCreated = true;
+                    }
+
+                    PipelineContext StepContext = new PipelineContext
+                    {
+                        Settings = Settings,
+                        PreflightState = CurrentPreflightState,
+                        Transaction = Manifest,
+                        Progress = Progress,
+                        SelectedStepIds = OrderedStepIds,
+                        StepNumber = Index + 1,
+                        TotalSteps = OrderedSteps.Count
+                    };
+
+                    StepExecutionResult StepExecResult = await CurrentStep.ExecuteAsync(StepContext, CancellationToken);
+                    StepResults.Add(StepExecResult);
+
+                    if (StepExecResult.UpdatedPreflightState != null)
+                    {
+                        CurrentPreflightState = PipelineOrchestrator.MergePreflightState(
+                            CurrentPreflightState,
+                            StepExecResult.UpdatedPreflightState);
+                    }
+
+                    if (!StepExecResult.Succeeded)
+                    {
+                        string StepError = StepExecResult.ErrorMessage;
+                        if (string.IsNullOrWhiteSpace(StepError))
+                        {
+                            StepError = $"Schritt '{CurrentStep.DisplayName}' ({CurrentStep.StepId}) ist fehlgeschlagen.";
+                        }
+
                         return await this.RollbackAndBuildFailureResultAsync(
                             Manifest,
                             Settings,
-                            "Projekt konnte vor dem Stage-1-Meilenstein-Snapshot nicht gespeichert werden.",
+                            StepError,
                             false,
                             StepResults,
                             Progress);
                     }
 
-                    await this.TransactionManagerField.CreateMilestoneSnapshotAsync(
-                        Manifest,
-                        PipelineOrchestrator.Stage1MilestoneName,
-                        PipelineOrchestrator.Stage1MilestoneFileName,
-                        CancellationToken);
-
-                    MilestoneCreated = true;
-                }
-
-                PipelineContext StepContext = new PipelineContext
-                {
-                    Settings = Settings,
-                    PreflightState = CurrentPreflightState,
-                    Transaction = Manifest,
-                    Progress = Progress,
-                    SelectedStepIds = OrderedStepIds,
-                    StepNumber = Index + 1,
-                    TotalSteps = OrderedSteps.Count
-                };
-
-                StepExecutionResult StepExecResult = await CurrentStep.ExecuteAsync(StepContext, CancellationToken);
-                StepResults.Add(StepExecResult);
-
-                if (StepExecResult.UpdatedPreflightState != null)
-                {
-                    CurrentPreflightState = PipelineOrchestrator.MergePreflightState(
-                        CurrentPreflightState,
-                        StepExecResult.UpdatedPreflightState);
-                }
-
-                if (!StepExecResult.Succeeded)
-                {
-                    string StepError = StepExecResult.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(StepError))
+                    if (CurrentStep.ExecutionOrder <= PipelineOrchestrator.Stage1MaxExecutionOrder)
                     {
-                        StepError = $"Schritt '{CurrentStep.DisplayName}' ({CurrentStep.StepId}) ist fehlgeschlagen.";
+                        HasCompletedStage1Step = true;
                     }
+                }
 
+                CancellationToken.ThrowIfCancellationRequested();
+
+                bool FinalSaveOk = await this.BridgeField.SaveProjectAsync(Settings, CancellationToken);
+                if (!FinalSaveOk)
+                {
                     return await this.RollbackAndBuildFailureResultAsync(
                         Manifest,
                         Settings,
-                        StepError,
+                        "Projekt konnte nach Abschluss der Pipeline nicht gespeichert werden.",
                         false,
                         StepResults,
                         Progress);
                 }
 
-                if (CurrentStep.ExecutionOrder <= PipelineOrchestrator.Stage1MaxExecutionOrder)
+                await this.TransactionManagerField.CommitTransactionAsync(Manifest, Settings, CancellationToken);
+                await this.TransactionManagerField.RotateBackupsAsync(
+                    PreflightState.ProjectPath,
+                    Settings.MaxBackupsToKeep,
+                    CancellationToken);
+
+                this.BridgeField.CleanupIpcFiles();
+
+                this.ReportOrchestratorProgress(
+                    Progress,
+                    OrderedStepIds[OrderedStepIds.Count - 1],
+                    "Pipeline abgeschlossen",
+                    100.0,
+                    "Alle ausgewählten Pipeline-Schritte wurden erfolgreich abgeschlossen und gespeichert.",
+                    false);
+
+                return new PipelineExecutionResult
                 {
-                    HasCompletedStage1Step = true;
-                }
+                    Succeeded = true,
+                    WasCancelled = false,
+                    WasRolledBack = false,
+                    TransactionId = Manifest.TransactionId,
+                    Message = "Pipeline erfolgreich abgeschlossen.",
+                    StepResults = StepResults
+                };
             }
+            catch (OperationCanceledException)
+            {
+                bool IsUserCancel = CancellationToken.IsCancellationRequested;
+                string CancelReason = "Pipeline-Ausführung wurde wegen eines Timeouts abgebrochen.";
+                if (IsUserCancel)
+                {
+                    CancelReason = "Pipeline-Ausführung wurde vom Benutzer abgebrochen.";
+                }
 
-            CancellationToken.ThrowIfCancellationRequested();
-
-            bool FinalSaveOk = await this.BridgeField.SaveProjectAsync(Settings, CancellationToken);
-            if (!FinalSaveOk)
+                return await this.RollbackAndBuildFailureResultAsync(
+                    Manifest,
+                    Settings,
+                    CancelReason,
+                    IsUserCancel,
+                    StepResults,
+                    Progress);
+            }
+            catch (Exception Ex)
             {
                 return await this.RollbackAndBuildFailureResultAsync(
                     Manifest,
                     Settings,
-                    "Projekt konnte nach Abschluss der Pipeline nicht gespeichert werden.",
+                    Ex.Message,
                     false,
                     StepResults,
                     Progress);
             }
-
-            await this.TransactionManagerField.CommitTransactionAsync(Manifest, Settings, CancellationToken);
-            await this.TransactionManagerField.RotateBackupsAsync(
-                PreflightState.ProjectPath,
-                Settings.MaxBackupsToKeep,
-                CancellationToken);
-
+        }
+        finally
+        {
+            await this.BridgeField.EndSessionAsync(CancellationToken.None);
             this.BridgeField.CleanupIpcFiles();
-
-            this.ReportOrchestratorProgress(
-                Progress,
-                OrderedStepIds[OrderedStepIds.Count - 1],
-                "Pipeline abgeschlossen",
-                100.0,
-                "Alle ausgewählten Pipeline-Schritte wurden erfolgreich abgeschlossen und gespeichert.",
-                false);
-
-            return new PipelineExecutionResult
-            {
-                Succeeded = true,
-                WasCancelled = false,
-                WasRolledBack = false,
-                TransactionId = Manifest.TransactionId,
-                Message = "Pipeline erfolgreich abgeschlossen.",
-                StepResults = StepResults
-            };
-        }
-        catch (OperationCanceledException)
-        {
-            bool IsUserCancel = CancellationToken.IsCancellationRequested;
-            string CancelReason = "Pipeline-Ausführung wurde wegen eines Timeouts abgebrochen.";
-            if (IsUserCancel)
-            {
-                CancelReason = "Pipeline-Ausführung wurde vom Benutzer abgebrochen.";
-            }
-
-            return await this.RollbackAndBuildFailureResultAsync(
-                Manifest,
-                Settings,
-                CancelReason,
-                IsUserCancel,
-                StepResults,
-                Progress);
-        }
-        catch (Exception Ex)
-        {
-            return await this.RollbackAndBuildFailureResultAsync(
-                Manifest,
-                Settings,
-                Ex.Message,
-                false,
-                StepResults,
-                Progress);
         }
     }
 

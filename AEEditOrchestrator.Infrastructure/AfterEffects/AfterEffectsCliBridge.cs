@@ -13,7 +13,9 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
     #region Constants
 
     private const int DefaultWatchdogTimeoutSeconds = 45;
-    private const int DefaultPostScriptTeardownCooldownMs = 1500;
+    private const int DefaultPostScriptTeardownCooldownMs = 2500;
+    private const int SessionEndWaitTimeoutMs = 3000;
+    private const int SessionEndPollIntervalMs = 50;
     private const int GracefulAbortWaitSeconds = 12;
     private const int GracefulAbortWaitNoHeartbeatSeconds = 2;
     private const int CloseNoSaveTimeoutSeconds = 8;
@@ -36,6 +38,10 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
     private readonly int PostScriptCooldownMsField;
     private readonly UTF8Encoding Utf8NoBomEncodingField = new UTF8Encoding(false);
     private readonly SemaphoreSlim ExecutionLockField = new SemaphoreSlim(1, 1);
+    private readonly object SessionStateLockField = new object();
+    private int SessionDepthField = 0;
+    private bool IsSessionAliveField = false;
+    private bool IsScriptHostBlockedField = false;
     private DateTimeOffset LastScriptCompletedUtcField = DateTimeOffset.MinValue;
 
     #endregion
@@ -83,6 +89,63 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
     #endregion
 
     #region Public Methods
+
+    public void BeginSession()
+    {
+        lock (this.SessionStateLockField)
+        {
+            this.SessionDepthField++;
+            if (this.SessionDepthField == 1)
+            {
+                this.EnsureSessionKeepAliveFile();
+                AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionEndedFilePath);
+            }
+        }
+    }
+
+    public async Task EndSessionAsync(CancellationToken CancellationToken = default)
+    {
+        lock (this.SessionStateLockField)
+        {
+            if (this.SessionDepthField > 0)
+            {
+                this.SessionDepthField--;
+            }
+
+            if (this.SessionDepthField > 0)
+            {
+                return;
+            }
+        }
+
+        await this.ExecutionLockField.WaitAsync(CancellationToken).ConfigureAwait(false);
+        try
+        {
+            bool WasSessionAlive = this.IsSessionAliveField;
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionKeepAliveFilePath);
+
+            if (WasSessionAlive && this.IsAfterEffectsRunning())
+            {
+                Stopwatch EndTimer = Stopwatch.StartNew();
+                while (!File.Exists(this.PathsField.SessionEndedFilePath)
+                    && EndTimer.ElapsedMilliseconds < AfterEffectsCliBridge.SessionEndWaitTimeoutMs
+                    && this.IsAfterEffectsRunning())
+                {
+                    CancellationToken.ThrowIfCancellationRequested();
+                    await Task.Delay(AfterEffectsCliBridge.SessionEndPollIntervalMs, CancellationToken).ConfigureAwait(false);
+                }
+
+                this.LastScriptCompletedUtcField = DateTimeOffset.UtcNow;
+            }
+
+            this.IsSessionAliveField = false;
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionEndedFilePath);
+        }
+        finally
+        {
+            this.ExecutionLockField.Release();
+        }
+    }
 
     public bool IsAfterEffectsRunning()
     {
@@ -145,7 +208,14 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
 
             if (!this.IsAfterEffectsRunning())
             {
+                this.IsSessionAliveField = false;
+                this.IsScriptHostBlockedField = false;
                 return true;
+            }
+
+            if (this.IsScriptHostBlockedField)
+            {
+                return false;
             }
 
             if (string.IsNullOrWhiteSpace(Settings.AfterEffectsExecutablePath) || !File.Exists(Settings.AfterEffectsExecutablePath))
@@ -154,7 +224,7 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
             }
 
             string ScriptToRun = this.PathsField.CloseNoSaveScriptPath;
-            if (!File.Exists(ScriptToRun))
+            if (this.CanReuseActiveSession() || this.IsSessionRequested() || !File.Exists(ScriptToRun))
             {
                 ScriptToRun = this.PathsField.RunnerScriptPath;
             }
@@ -297,6 +367,11 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         {
             CancellationToken.ThrowIfCancellationRequested();
 
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionKeepAliveFilePath);
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionEndedFilePath);
+            this.IsSessionAliveField = false;
+            this.IsScriptHostBlockedField = false;
+
             await this.ShutdownRunningAfterEffectsProcessesAsync(CancellationToken).ConfigureAwait(false);
 
             Stopwatch Timer = Stopwatch.StartNew();
@@ -326,6 +401,12 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         AfterEffectsCliBridge.TryDeleteFile(this.PathsField.HeartbeatFilePath);
         AfterEffectsCliBridge.TryDeleteFile(this.PathsField.ResultFilePath);
         AfterEffectsCliBridge.TryDeleteFile(this.PathsField.AbortFlagFilePath);
+
+        if (!this.IsSessionRequested() && !this.IsSessionAliveField)
+        {
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionKeepAliveFilePath);
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionEndedFilePath);
+        }
     }
 
     #endregion
@@ -399,6 +480,50 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         }
     }
 
+    private void EnsureSessionKeepAliveFile()
+    {
+        this.PathsField.EnsureBaseDirectoryExists();
+        try
+        {
+            File.WriteAllText(
+                this.PathsField.SessionKeepAliveFilePath,
+                DateTimeOffset.UtcNow.ToString("O"),
+                this.Utf8NoBomEncodingField);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private bool IsSessionRequested()
+    {
+        lock (this.SessionStateLockField)
+        {
+            return this.SessionDepthField > 0;
+        }
+    }
+
+    private bool CanReuseActiveSession()
+    {
+        if (!this.IsSessionAliveField || this.IsScriptHostBlockedField)
+        {
+            return false;
+        }
+
+        if (!this.IsAfterEffectsRunning()
+            || File.Exists(this.PathsField.SessionEndedFilePath)
+            || !File.Exists(this.PathsField.SessionKeepAliveFilePath))
+        {
+            this.IsSessionAliveField = false;
+            return false;
+        }
+
+        return true;
+    }
+
     private async Task EnsureInterScriptCooldownAsync(
         bool WasAeRunningBeforeLaunch,
         CancellationToken CancellationToken)
@@ -427,35 +552,53 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         int? TimeoutSecondsOverride = null,
         bool SkipAbortDrainOnTimeout = false)
     {
-        bool WasAeRunningBeforeLaunch = this.IsAfterEffectsRunning();
-        await this.EnsureInterScriptCooldownAsync(WasAeRunningBeforeLaunch, CancellationToken).ConfigureAwait(false);
+        bool ReuseActiveSession = this.CanReuseActiveSession();
+        bool WasAeRunningBeforeLaunch = true;
+        Process? LaunchedProcess = null;
 
-        string? WorkingDirectory = Path.GetDirectoryName(Settings.AfterEffectsExecutablePath);
-        string EffectiveWorkingDirectory = this.PathsField.BaseDirectory;
-        if (!string.IsNullOrWhiteSpace(WorkingDirectory))
+        if (!ReuseActiveSession)
         {
-            EffectiveWorkingDirectory = WorkingDirectory;
-        }
-
-        ProcessStartInfo StartInfo = new ProcessStartInfo
-        {
-            FileName = Settings.AfterEffectsExecutablePath,
-            UseShellExecute = false,
-            CreateNoWindow = false,
-            WorkingDirectory = EffectiveWorkingDirectory
-        };
-        StartInfo.ArgumentList.Add("-r");
-        StartInfo.ArgumentList.Add(ScriptPath);
-
-        Process? LaunchedProcess = Process.Start(StartInfo);
-        if (LaunchedProcess == null)
-        {
-            return new StepResult
+            WasAeRunningBeforeLaunch = this.IsAfterEffectsRunning();
+            if (this.IsScriptHostBlockedField && !WasAeRunningBeforeLaunch)
             {
-                JobId = JobId,
-                Status = "error",
-                Error = $"Failed to start process '{Settings.AfterEffectsExecutablePath}'."
+                this.IsScriptHostBlockedField = false;
+            }
+
+            await this.EnsureInterScriptCooldownAsync(WasAeRunningBeforeLaunch, CancellationToken).ConfigureAwait(false);
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionEndedFilePath);
+
+            if (this.IsSessionRequested())
+            {
+                this.EnsureSessionKeepAliveFile();
+            }
+
+            string? WorkingDirectory = Path.GetDirectoryName(Settings.AfterEffectsExecutablePath);
+            string EffectiveWorkingDirectory = this.PathsField.BaseDirectory;
+            if (!string.IsNullOrWhiteSpace(WorkingDirectory))
+            {
+                EffectiveWorkingDirectory = WorkingDirectory;
+            }
+
+            ProcessStartInfo StartInfo = new ProcessStartInfo
+            {
+                FileName = Settings.AfterEffectsExecutablePath,
+                UseShellExecute = false,
+                CreateNoWindow = false,
+                WorkingDirectory = EffectiveWorkingDirectory
             };
+            StartInfo.ArgumentList.Add("-r");
+            StartInfo.ArgumentList.Add(ScriptPath);
+
+            LaunchedProcess = Process.Start(StartInfo);
+            if (LaunchedProcess == null)
+            {
+                return new StepResult
+                {
+                    JobId = JobId,
+                    Status = "error",
+                    Error = $"Failed to start process '{Settings.AfterEffectsExecutablePath}'."
+                };
+            }
         }
 
         int TimeoutSeconds = Settings.WatchdogTimeoutSeconds;
@@ -469,118 +612,175 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
             TimeoutSeconds = AfterEffectsCliBridge.DefaultWatchdogTimeoutSeconds;
         }
 
+        bool SessionRequested = this.IsSessionRequested();
+        bool IsRunnerScript = string.Equals(ScriptPath, this.PathsField.RunnerScriptPath, StringComparison.OrdinalIgnoreCase);
+
         using (LaunchedProcess)
         {
-            try
+            Func<bool> ProcessAliveCheck = () =>
             {
-                Func<bool> ProcessAliveCheck = () =>
+                if (File.Exists(this.PathsField.ResultFilePath))
                 {
-                    if (File.Exists(this.PathsField.ResultFilePath))
-                    {
-                        return true;
-                    }
-
-                    if (WasAeRunningBeforeLaunch)
-                    {
-                        return this.IsAfterEffectsRunning();
-                    }
-
-                    if (LaunchedProcess.HasExited)
-                    {
-                        if (LaunchedProcess.ExitCode != 0 && !this.IsAfterEffectsRunning())
-                        {
-                            return false;
-                        }
-                    }
-
                     return true;
+                }
+
+                if (ReuseActiveSession)
+                {
+                    return this.IsAfterEffectsRunning() && !File.Exists(this.PathsField.SessionEndedFilePath);
+                }
+
+                if (WasAeRunningBeforeLaunch)
+                {
+                    return this.IsAfterEffectsRunning();
+                }
+
+                if (LaunchedProcess != null && LaunchedProcess.HasExited)
+                {
+                    if (LaunchedProcess.ExitCode != 0 && !this.IsAfterEffectsRunning())
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            };
+
+            using (HeartbeatWatchdog Watchdog = new HeartbeatWatchdog(
+                TimeoutSeconds,
+                CancellationToken,
+                ProcessAliveCheck))
+            {
+                Watchdog.Start();
+
+                int HeartbeatReceivedFlag = 0;
+                Action OnHeartbeat = () =>
+                {
+                    Interlocked.Exchange(ref HeartbeatReceivedFlag, 1);
+                    Watchdog.NotifyHeartbeat();
                 };
 
-                using (HeartbeatWatchdog Watchdog = new HeartbeatWatchdog(
-                    TimeoutSeconds,
-                    CancellationToken,
-                    ProcessAliveCheck))
+                try
                 {
-                    Watchdog.Start();
+                    StepResult Result = await this.WatcherField.WaitForResultAsync(
+                        JobId,
+                        HeartbeatProgress,
+                        OnHeartbeat,
+                        Watchdog.Token).ConfigureAwait(false);
 
-                    int HeartbeatReceivedFlag = 0;
-                    Action OnHeartbeat = () =>
+                    Watchdog.MarkCompleted();
+                    this.IsScriptHostBlockedField = false;
+
+                    if (SessionRequested && IsRunnerScript && !File.Exists(this.PathsField.SessionEndedFilePath))
                     {
-                        Interlocked.Exchange(ref HeartbeatReceivedFlag, 1);
-                        Watchdog.NotifyHeartbeat();
-                    };
-
-                    try
-                    {
-                        StepResult Result = await this.WatcherField.WaitForResultAsync(
-                            JobId,
-                            HeartbeatProgress,
-                            OnHeartbeat,
-                            Watchdog.Token).ConfigureAwait(false);
-
-                        Watchdog.MarkCompleted();
-                        return Result;
+                        this.IsSessionAliveField = true;
                     }
-                    catch (OperationCanceledException)
+                    else
                     {
-                        bool HasReceivedAnyHeartbeat = Volatile.Read(ref HeartbeatReceivedFlag) == 1;
-                        WatchdogTerminationReason Reason = Watchdog.TerminationReason;
+                        this.IsSessionAliveField = false;
+                        this.LastScriptCompletedUtcField = DateTimeOffset.UtcNow;
+                    }
 
-                        if (Reason == WatchdogTerminationReason.UserCancelled || CancellationToken.IsCancellationRequested)
+                    return Result;
+                }
+                catch (OperationCanceledException)
+                {
+                    bool HasReceivedAnyHeartbeat = Volatile.Read(ref HeartbeatReceivedFlag) == 1;
+                    WatchdogTerminationReason Reason = Watchdog.TerminationReason;
+
+                    if (Reason == WatchdogTerminationReason.UserCancelled || CancellationToken.IsCancellationRequested)
+                    {
+                        bool DrainedCleanly = await this.SignalAbortAndDrainAsync(JobId, HasReceivedAnyHeartbeat).ConfigureAwait(false);
+                        if (DrainedCleanly && SessionRequested && IsRunnerScript && !File.Exists(this.PathsField.SessionEndedFilePath))
                         {
-                            await this.SignalAbortAndDrainAsync(JobId, HasReceivedAnyHeartbeat).ConfigureAwait(false);
-                            throw new OperationCanceledException(CancellationToken);
+                            this.IsSessionAliveField = true;
+                            this.IsScriptHostBlockedField = false;
                         }
-
-                        if (Reason == WatchdogTerminationReason.HeartbeatTimeout)
+                        else
                         {
-                            if (!SkipAbortDrainOnTimeout)
+                            this.IsSessionAliveField = false;
+                            if (!DrainedCleanly)
                             {
-                                await this.SignalAbortAndDrainAsync(JobId, HasReceivedAnyHeartbeat).ConfigureAwait(false);
+                                this.IsScriptHostBlockedField = true;
                             }
 
-                            return new StepResult
-                            {
-                                JobId = JobId,
-                                Status = "timeout",
-                                Error = $"Watchdog timeout after {TimeoutSeconds} seconds while waiting for After Effects job '{JobId}'.",
-                                Message = "Watchdog-Timeout"
-                            };
+                            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionKeepAliveFilePath);
+                            this.LastScriptCompletedUtcField = DateTimeOffset.UtcNow;
                         }
 
-                        if (Reason == WatchdogTerminationReason.ProcessCrashed)
+                        throw new OperationCanceledException(CancellationToken);
+                    }
+
+                    if (Reason == WatchdogTerminationReason.HeartbeatTimeout)
+                    {
+                        bool DrainedCleanly = false;
+                        if (!SkipAbortDrainOnTimeout)
                         {
-                            return new StepResult
+                            DrainedCleanly = await this.SignalAbortAndDrainAsync(JobId, HasReceivedAnyHeartbeat).ConfigureAwait(false);
+                        }
+
+                        if (DrainedCleanly && SessionRequested && IsRunnerScript && !File.Exists(this.PathsField.SessionEndedFilePath))
+                        {
+                            this.IsSessionAliveField = true;
+                            this.IsScriptHostBlockedField = false;
+                        }
+                        else
+                        {
+                            this.IsSessionAliveField = false;
+                            if (!DrainedCleanly)
                             {
-                                JobId = JobId,
-                                Status = "crashed",
-                                Error = $"After Effects process terminated unexpectedly during job '{JobId}'.",
-                                Message = "AE-Crash"
-                            };
+                                this.IsScriptHostBlockedField = true;
+                            }
+
+                            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionKeepAliveFilePath);
+                            this.LastScriptCompletedUtcField = DateTimeOffset.UtcNow;
                         }
 
                         return new StepResult
                         {
                             JobId = JobId,
-                            Status = "error",
-                            Error = $"After Effects job '{JobId}' was interrupted unexpectedly."
+                            Status = "timeout",
+                            Error = $"Watchdog timeout after {TimeoutSeconds} seconds while waiting for After Effects job '{JobId}'.",
+                            Message = "Watchdog-Timeout"
                         };
                     }
+
+                    if (Reason == WatchdogTerminationReason.ProcessCrashed)
+                    {
+                        this.IsSessionAliveField = false;
+                        this.IsScriptHostBlockedField = false;
+                        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionKeepAliveFilePath);
+                        this.LastScriptCompletedUtcField = DateTimeOffset.UtcNow;
+
+                        return new StepResult
+                        {
+                            JobId = JobId,
+                            Status = "crashed",
+                            Error = $"After Effects process terminated unexpectedly during job '{JobId}'.",
+                            Message = "AE-Crash"
+                        };
+                    }
+
+                    this.IsSessionAliveField = false;
+                    AfterEffectsCliBridge.TryDeleteFile(this.PathsField.SessionKeepAliveFilePath);
+                    this.LastScriptCompletedUtcField = DateTimeOffset.UtcNow;
+
+                    return new StepResult
+                    {
+                        JobId = JobId,
+                        Status = "error",
+                        Error = $"After Effects job '{JobId}' was interrupted unexpectedly."
+                    };
                 }
-            }
-            finally
-            {
-                this.LastScriptCompletedUtcField = DateTimeOffset.UtcNow;
             }
         }
     }
 
-    private async Task SignalAbortAndDrainAsync(string JobId, bool HasReceivedAnyHeartbeat)
+    private async Task<bool> SignalAbortAndDrainAsync(string JobId, bool HasReceivedAnyHeartbeat)
     {
         if (!this.IsAfterEffectsRunning())
         {
             AfterEffectsCliBridge.TryDeleteFile(this.PathsField.AbortFlagFilePath);
-            return;
+            return false;
         }
 
         int WaitSeconds = AfterEffectsCliBridge.GracefulAbortWaitNoHeartbeatSeconds;
@@ -602,19 +802,22 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
             {
                 try
                 {
-                    await this.WatcherField.WaitForResultAsync(
+                    StepResult DrainedResult = await this.WatcherField.WaitForResultAsync(
                         JobId,
                         null,
                         null,
                         DrainCts.Token).ConfigureAwait(false);
+                    return DrainedResult != null;
                 }
                 catch (OperationCanceledException)
                 {
+                    return false;
                 }
             }
         }
         catch (IOException)
         {
+            return false;
         }
         finally
         {

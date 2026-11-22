@@ -15,6 +15,8 @@ public sealed class FakeAfterEffectsBridge : IAfterEffectsBridge
     private bool RestartResultField = true;
     private int SaveCallCountField = 0;
     private int CleanupCallCountField = 0;
+    private int BeginSessionCallCountField = 0;
+    private int EndSessionCallCountField = 0;
     private readonly List<JobPayload> RecordedJobsField = new List<JobPayload>();
     private readonly List<string> CallLogField = new List<string>();
     private Func<JobPayload, PipelineSettings, IProgress<HeartbeatMessage>?, CancellationToken, Task<StepResult>>? JobHandlerField = null;
@@ -99,6 +101,22 @@ public sealed class FakeAfterEffectsBridge : IAfterEffectsBridge
         }
     }
 
+    public int BeginSessionCallCount
+    {
+        get
+        {
+            return this.BeginSessionCallCountField;
+        }
+    }
+
+    public int EndSessionCallCount
+    {
+        get
+        {
+            return this.EndSessionCallCountField;
+        }
+    }
+
     public IReadOnlyList<JobPayload> RecordedJobs
     {
         get
@@ -130,6 +148,19 @@ public sealed class FakeAfterEffectsBridge : IAfterEffectsBridge
     #endregion
 
     #region Public Methods
+
+    public void BeginSession()
+    {
+        this.BeginSessionCallCountField++;
+        this.CallLogField.Add("BeginSession");
+    }
+
+    public Task EndSessionAsync(CancellationToken CancellationToken = default)
+    {
+        this.EndSessionCallCountField++;
+        this.CallLogField.Add("EndSession");
+        return Task.CompletedTask;
+    }
 
     public bool IsAfterEffectsRunning()
     {

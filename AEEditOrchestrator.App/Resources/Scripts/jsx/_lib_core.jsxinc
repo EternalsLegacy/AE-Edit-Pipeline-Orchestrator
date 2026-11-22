@@ -559,6 +559,41 @@ function readJobJson() {
     return AE_JSON.parse(content);
 }
 
+function tryReadJobJsonSafe() {
+    try {
+        var ipcFolder = getIpcFolder();
+        var jobFile = new File(ipcFolder.fsName + "/job.json");
+        if (!jobFile.exists) {
+            return null;
+        }
+        var content = readUtf8TextFile(jobFile);
+        if (trimStr(content) === "") {
+            return null;
+        }
+        return AE_JSON.parse(content);
+    } catch (eReadSafe) {
+        return null;
+    }
+}
+
+function isSessionKeepAliveActive() {
+    try {
+        var ipcFolder = getIpcFolder();
+        var keepAliveFile = new File(ipcFolder.fsName + "/session_keepalive.flag");
+        return keepAliveFile.exists;
+    } catch (eKeepAlive) {
+        return false;
+    }
+}
+
+function writeSessionEndedFlag() {
+    try {
+        var ipcFolder = getIpcFolder();
+        var endedFile = new File(ipcFolder.fsName + "/session_ended.flag");
+        writeUtf8TextFile(endedFile, formatUtcIsoNow());
+    } catch (eSessionEnd) {}
+}
+
 function writeHeartbeat(jobId, currentIndex, totalItems, message) {
     try {
         var ipcFolder = getIpcFolder();

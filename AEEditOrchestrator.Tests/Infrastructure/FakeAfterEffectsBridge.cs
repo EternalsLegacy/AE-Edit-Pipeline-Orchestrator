@@ -100,6 +100,17 @@ internal sealed class FakeAfterEffectsBridge : IAfterEffectsBridge
 
     #region Public Methods
 
+    public void BeginSession()
+    {
+        this.RecordedCallsField.Add(nameof(this.BeginSession));
+    }
+
+    public Task EndSessionAsync(CancellationToken CancellationToken = default)
+    {
+        this.RecordedCallsField.Add(nameof(this.EndSessionAsync));
+        return Task.CompletedTask;
+    }
+
     public bool IsAfterEffectsRunning()
     {
         this.RecordedCallsField.Add(nameof(this.IsAfterEffectsRunning));
