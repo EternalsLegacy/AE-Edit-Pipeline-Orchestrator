@@ -433,8 +433,8 @@ public sealed class BeatDetectionSettings
 {
     #region Fields
 
-    private BeatDetectionMode ModeField = BeatDetectionMode.RedOverlay;
-    private double SensitivityField = 5.0;
+    private BeatDetectionMode ModeField = BeatDetectionMode.UniversalFourZone;
+    private double SensitivityField = 65.0;
     private int MinFrameGapField = 2;
     private BeatMarkerTarget MarkerTargetField = BeatMarkerTarget.Composition;
     private bool OnlyWorkAreaField = false;

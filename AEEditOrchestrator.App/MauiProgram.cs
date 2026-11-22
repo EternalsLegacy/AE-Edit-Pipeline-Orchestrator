@@ -8,6 +8,8 @@ using AEEditOrchestrator.Infrastructure.AfterEffects;
 using AEEditOrchestrator.Infrastructure.Persistence;
 using AEEditOrchestrator.Infrastructure.Transactions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Maui.Handlers;
+using Microsoft.Maui.LifecycleEvents;
 
 namespace AEEditOrchestrator.App;
 
@@ -19,6 +21,7 @@ public static class MauiProgram
     {
         EmbeddedScriptExtractor ScriptExtractor = new EmbeddedScriptExtractor();
         string ExtractedScriptsDirectory = ScriptExtractor.ExtractAllScripts();
+        string ExtractedAppIconPath = ScriptExtractor.ExtractAppIcon();
 
         MauiAppBuilder Builder = MauiApp.CreateBuilder();
         Builder
@@ -27,7 +30,35 @@ public static class MauiProgram
             {
                 Fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                 Fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+            })
+            .ConfigureLifecycleEvents(Events =>
+            {
+#if WINDOWS
+                Events.AddWindows(WindowsLifecycle =>
+                {
+                    WindowsLifecycle.OnWindowCreated(NativeWindow =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(ExtractedAppIconPath) && File.Exists(ExtractedAppIconPath))
+                        {
+                            IntPtr WindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(NativeWindow);
+                            Microsoft.UI.WindowId WindowIdValue = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(WindowHandle);
+                            Microsoft.UI.Windowing.AppWindow WinUiWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(WindowIdValue);
+                            WinUiWindow.SetIcon(ExtractedAppIconPath);
+                        }
+                    });
+                });
+#endif
             });
+
+#if WINDOWS
+        SwitchHandler.Mapper.AppendToMapping("CompactWindowsSwitch", (Handler, View) =>
+        {
+            Microsoft.UI.Xaml.Controls.ToggleSwitch PlatformSwitch = Handler.PlatformView;
+            PlatformSwitch.OnContent = string.Empty;
+            PlatformSwitch.OffContent = string.Empty;
+            PlatformSwitch.MinWidth = 44;
+        });
+#endif
 
 #if DEBUG
         Builder.Logging.AddDebug();

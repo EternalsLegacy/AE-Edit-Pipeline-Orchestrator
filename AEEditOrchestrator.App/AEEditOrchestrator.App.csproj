@@ -14,6 +14,7 @@
 		<ApplicationId>com.aeeditorchestrator.app</ApplicationId>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
+		<ApplicationIcon>Platforms\Windows\app.ico</ApplicationIcon>
 
 		<WindowsPackageType>None</WindowsPackageType>
 		<SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
@@ -32,7 +33,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
 		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
 		<MauiImage Include="Resources\Images\*" />
 		<MauiImage Update="Resources\Images\dotnet_bot.png" Resize="True" BaseSize="300,185" />
@@ -41,6 +41,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<EmbeddedResource Include="Platforms\Windows\app.ico" LogicalName="AppAssets.app.ico" />
 		<EmbeddedResource Include="Resources\Scripts\jsx\*.jsx" LogicalName="JsxScripts.%(Filename)%(Extension)" />
 		<EmbeddedResource Include="Resources\Scripts\jsx\*.jsxinc" LogicalName="JsxScripts.%(Filename)%(Extension)" />
 		<None Update="Resources\Scripts\jsx\**\*">

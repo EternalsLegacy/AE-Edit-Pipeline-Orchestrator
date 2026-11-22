@@ -102,7 +102,7 @@ Statt monolithischer, blockierender `.jsx`-Dialog-Scripts steuert der Orchestrat
 # Debug-Build der gesamten Solution
 dotnet build AEEditOrchestrator.sln -c Debug
 
-# Alle 83 xUnit-Tests (Core + Infrastructure) ausführen
+# Alle 84 xUnit-Tests (Core + Infrastructure) ausführen
 dotnet test AEEditOrchestrator.sln
 
 # Self-Contained Single-File Release Build nach ./Temp erstellen
@@ -137,13 +137,12 @@ Alle Einstellungen werden unter `%LocalAppData%\AEEditOrchestrator\settings.json
    - `User Presets`-Ordner (Auto-Detection unter `Dokumente\Adobe\After Effects 2026\User Presets`)
    - `Batch-Größe` (Standard: `10`), `Watchdog-Timeout` (Standard: `45 s`), `Max. Backups` (Standard: `5`)
    - Toggles: `SaveAfterBatch` und `PurgeAfterBatch`
-2. **Geschützte Layer & Auswahl**:
+2. **Geschützte Layer**:
    - Editierbare Ausschlussliste (Standard: `Adjustment Layer 1`, `Black Solid 9`, `Black Solid 10`, `ETERNALS`)
-   - Toggle `Nur markierte Clips verarbeiten` (`UseSelectedOnly`)
 3. **Presets & Effekt-Parameter**:
    - Preset-Namen-Mapping für alle 7 `.ffx`-Dateien + Button **Presets jetzt validieren**
-   - `Motion Tile` Breite/Höhe (`370`/`370`), `StartBlur Frames` (`10`), `EndBlur` Längen (`200`/`80`), Blur-Winkel (`90°`/`180°`), `StartDirection Stage 1` (`Vertical`/`Horizontal`), `BlurZoom Start Stage 2` (`BlurZoomIn`/`BlurZoomOut`), Toggle `Motion Tile auf BlurZoom-Layer hinzufügen`
-   - `Beat-Detection`: Modus (`RedOverlay` / `UniversalFourZone`), `Empfindlichkeit` (`5.0`), `MinFrameGap` (`2`), `Marker-Ziel` (`Composition` / `Layer`), `OnlyWorkArea`
+   - `Motion Tile` Breite/Höhe (`370`/`370`), `StartBlur Frames` (`10`), `EndBlur` Längen (`200`/`80`), Blur-Winkel (`90°`/`180°`), Toggle `Motion Tile auf BlurZoom-Layer hinzufügen`
+   - `Beat-Detection`: `Empfindlichkeit` (`10`–`100`, Standard: `65`), `MinFrameGap` (`2`), `Marker-Ziel` (`Komposition` / `Layer`), `OnlyWorkArea` (die Modus-Auswahl `Universal (Alle Farben & Cuts)` / `Rot-Overlay` sowie `Start-Richtung Stage 1`, `Zoom-Start Stage 2` und `Nur markierte Clips verarbeiten` befinden sich direkt im **Pipeline**-Tab)
 
 ---
 

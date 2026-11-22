@@ -38,10 +38,9 @@ Bevor du den ersten Test startest, prüfe diese vier Punkte:
    - Klicke auf **Presets jetzt validieren** und prüfe, dass alle 7 Presets (`FadeInOut`, `VerticalShake`, `VerticalBlur`, `HorizontalShake`, `HorizontalBlur`, `BlurZoomIn`, `BlurZoomOut`) den Status **Gefunden** zeigen.
    - Klicke bei Bedarf auf **Einstellungen speichern**.
 3. Wechsle links zurück auf **Pipeline** und klicke rechts unten auf **Preflight prüfen**:
-   - **Erwartetes Ergebnis im Status-Banner:**
-     - Verbindungs-Badge wechselt auf grün (`AE 2026 verbunden`).
+   - **Erwartetes Ergebnis in der Statusleiste:**
+     - Status-Punkt wechselt auf grün (`AE 2026 verbunden`).
      - Projektname (`.aep`), aktive Komposition und gültige Clip-Anzahl werden korrekt angezeigt.
-     - Falls das Projekt bereits Tags (`[EDIT_CLIP]`, `[DONE_PIPELINE_1]`, `[DONE_ZOOM_GROUP]`) enthält, leuchten die entsprechenden Tag-Pills auf.
 
 ---
 
@@ -50,7 +49,7 @@ Bevor du den ersten Test startest, prüfe diese vier Punkte:
 1. Markiere in deiner offenen AE-Komposition **genau einen** Video-Layer (z. B. dein Template-/Referenz-Video).
 2. Im Tab **Pipeline**:
    - Setze den Haken **nur** bei `01_BeatDetection`.
-   - Wähle im Quick-Dropdown **Beat-Modus** entweder `Rot-Overlay` (für Template-Clips mit hartem Rot-Overlay) oder `Universal 4-Zonen` (für allgemeine Schnitte/Beats).
+   - Im Quick-Dropdown **Beat-Modus** ist standardmäßig `Universal (Alle Farben & Cuts)` aktiv (erkennt rote, blaue, grüne, weiße, schwarze und graue Overlay-Wechsel sowie harte Cuts bei Standard-Empfindlichkeit `65`); optional steht `Rot-Overlay` als zweite Option bereit.
    - Klicke auf **Pipeline starten**.
 3. **Prüf-Checkliste in After Effects:**
    - [ ] Fortschrittsbalken und Live-Log aktualisieren sich flüssig alle 25 Frames per `heartbeat.json`.

@@ -78,7 +78,7 @@ public sealed class JsonSettingsStoreTests : IDisposable
             BeatDetection = new BeatDetectionSettings
             {
                 Mode = BeatDetectionMode.UniversalFourZone,
-                Sensitivity = 8.25,
+                Sensitivity = 82.5,
                 MinFrameGap = 4,
                 MarkerTarget = BeatMarkerTarget.Layer,
                 OnlyWorkArea = true,
@@ -122,7 +122,7 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.Equal(Original.SelectedStepIds, Loaded.SelectedStepIds);
         Assert.Equal("MyZoomOut", Loaded.Presets.BlurZoomOut);
         Assert.Equal(BeatDetectionMode.UniversalFourZone, Loaded.BeatDetection.Mode);
-        Assert.Equal(8.25, Loaded.BeatDetection.Sensitivity);
+        Assert.Equal(82.5, Loaded.BeatDetection.Sensitivity);
         Assert.Equal(4, Loaded.BeatDetection.MinFrameGap);
         Assert.Equal(BeatMarkerTarget.Layer, Loaded.BeatDetection.MarkerTarget);
         Assert.True(Loaded.BeatDetection.OnlyWorkArea);
@@ -141,6 +141,8 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.Equal(5, Loaded.MaxBackupsToKeep);
         Assert.Equal("FadeInOut", Loaded.Presets.FadeInOut);
         Assert.Equal("BlurZoomOut", Loaded.Presets.BlurZoomOut);
+        Assert.Equal(BeatDetectionMode.UniversalFourZone, Loaded.BeatDetection.Mode);
+        Assert.Equal(65.0, Loaded.BeatDetection.Sensitivity);
     }
 
     [Fact]

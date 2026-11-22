@@ -12,12 +12,6 @@ public sealed partial class SettingsViewModel : ObservableObject
 {
     #region Constants
 
-    private const string StartDirectionVerticalLabel = "Vertical";
-    private const string StartDirectionHorizontalLabel = "Horizontal";
-    private const string BlurZoomInLabel = "BlurZoomIn";
-    private const string BlurZoomOutLabel = "BlurZoomOut";
-    private const string BeatModeRedOverlayLabel = "Rot-Overlay";
-    private const string BeatModeUniversalLabel = "Universal 4-Zonen";
     private const string MarkerTargetCompLabel = "Komposition";
     private const string MarkerTargetLayerLabel = "Layer";
 
@@ -30,21 +24,6 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private readonly ObservableCollection<string> ExcludedLayerNamesField = new ObservableCollection<string>();
     private readonly ObservableCollection<PresetValidationItemViewModel> PresetValidationItemsField = new ObservableCollection<PresetValidationItemViewModel>();
-    private readonly IReadOnlyList<string> StartDirectionOptionsField = new List<string>
-    {
-        StartDirectionVerticalLabel,
-        StartDirectionHorizontalLabel
-    };
-    private readonly IReadOnlyList<string> BlurZoomStartOptionsField = new List<string>
-    {
-        BlurZoomInLabel,
-        BlurZoomOutLabel
-    };
-    private readonly IReadOnlyList<string> BeatModeOptionsField = new List<string>
-    {
-        BeatModeRedOverlayLabel,
-        BeatModeUniversalLabel
-    };
     private readonly IReadOnlyList<string> MarkerTargetOptionsField = new List<string>
     {
         MarkerTargetCompLabel,
@@ -66,7 +45,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     private bool PurgeAfterBatchField = true;
 
     private string NewExcludedLayerNameField = string.Empty;
-    private bool UseSelectedOnlyField = false;
 
     private string FadeInOutPresetNameField = "FadeInOut";
     private string VerticalShakePresetNameField = "VerticalShake";
@@ -83,12 +61,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     private string EndBlur2LengthTextField = "80";
     private string VerticalBlurDirectionTextField = "90";
     private string HorizontalBlurDirectionTextField = "180";
-    private string SelectedStartDirectionOptionField = StartDirectionVerticalLabel;
-    private string SelectedBlurZoomStartOptionField = BlurZoomInLabel;
     private bool AddMotionTileToBlurZoomField = false;
 
-    private string SelectedBeatModeOptionField = BeatModeRedOverlayLabel;
-    private string BeatSensitivityTextField = "5.0";
+    private string BeatSensitivityTextField = "65";
     private string BeatMinFrameGapTextField = "2";
     private string SelectedMarkerTargetOptionField = MarkerTargetCompLabel;
     private bool BeatOnlyWorkAreaField = false;
@@ -110,30 +85,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         get
         {
             return this.PresetValidationItemsField;
-        }
-    }
-
-    public IReadOnlyList<string> StartDirectionOptions
-    {
-        get
-        {
-            return this.StartDirectionOptionsField;
-        }
-    }
-
-    public IReadOnlyList<string> BlurZoomStartOptions
-    {
-        get
-        {
-            return this.BlurZoomStartOptionsField;
-        }
-    }
-
-    public IReadOnlyList<string> BeatModeOptions
-    {
-        get
-        {
-            return this.BeatModeOptionsField;
         }
     }
 
@@ -299,18 +250,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         set
         {
             this.SetProperty(ref this.NewExcludedLayerNameField, value ?? string.Empty);
-        }
-    }
-
-    public bool UseSelectedOnly
-    {
-        get
-        {
-            return this.UseSelectedOnlyField;
-        }
-        set
-        {
-            this.SetProperty(ref this.UseSelectedOnlyField, value);
         }
     }
 
@@ -482,30 +421,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    public string SelectedStartDirectionOption
-    {
-        get
-        {
-            return this.SelectedStartDirectionOptionField;
-        }
-        set
-        {
-            this.SetProperty(ref this.SelectedStartDirectionOptionField, value ?? StartDirectionVerticalLabel);
-        }
-    }
-
-    public string SelectedBlurZoomStartOption
-    {
-        get
-        {
-            return this.SelectedBlurZoomStartOptionField;
-        }
-        set
-        {
-            this.SetProperty(ref this.SelectedBlurZoomStartOptionField, value ?? BlurZoomInLabel);
-        }
-    }
-
     public bool AddMotionTileToBlurZoom
     {
         get
@@ -515,18 +430,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         set
         {
             this.SetProperty(ref this.AddMotionTileToBlurZoomField, value);
-        }
-    }
-
-    public string SelectedBeatModeOption
-    {
-        get
-        {
-            return this.SelectedBeatModeOptionField;
-        }
-        set
-        {
-            this.SetProperty(ref this.SelectedBeatModeOptionField, value ?? BeatModeRedOverlayLabel);
         }
     }
 
@@ -639,8 +542,6 @@ public sealed partial class SettingsViewModel : ObservableObject
                 this.ExcludedLayerNamesField.Add(ExcludedName);
             }
 
-            this.UseSelectedOnly = Settings.UseSelectedOnly;
-
             this.FadeInOutPresetName = Settings.Presets.FadeInOut;
             this.VerticalShakePresetName = Settings.Presets.VerticalShake;
             this.VerticalBlurPresetName = Settings.Presets.VerticalBlur;
@@ -656,35 +557,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             this.EndBlur2LengthText = Settings.EndBlur2Length.ToString(CultureInfo.InvariantCulture);
             this.VerticalBlurDirectionText = Settings.VerticalBlurDirection.ToString(CultureInfo.InvariantCulture);
             this.HorizontalBlurDirectionText = Settings.HorizontalBlurDirection.ToString(CultureInfo.InvariantCulture);
-
-            if (Settings.StartDirection == ShakeStartDirection.Horizontal)
-            {
-                this.SelectedStartDirectionOption = StartDirectionHorizontalLabel;
-            }
-            else
-            {
-                this.SelectedStartDirectionOption = StartDirectionVerticalLabel;
-            }
-
-            if (Settings.BlurZoomStart == BlurZoomStartPreset.BlurZoomOut)
-            {
-                this.SelectedBlurZoomStartOption = BlurZoomOutLabel;
-            }
-            else
-            {
-                this.SelectedBlurZoomStartOption = BlurZoomInLabel;
-            }
-
             this.AddMotionTileToBlurZoom = Settings.AddMotionTileToBlurZoom;
-
-            if (Settings.BeatDetection.Mode == BeatDetectionMode.UniversalFourZone)
-            {
-                this.SelectedBeatModeOption = BeatModeUniversalLabel;
-            }
-            else
-            {
-                this.SelectedBeatModeOption = BeatModeRedOverlayLabel;
-            }
 
             this.BeatSensitivityText = Settings.BeatDetection.Sensitivity.ToString("0.##", CultureInfo.InvariantCulture);
             this.BeatMinFrameGapText = Settings.BeatDetection.MinFrameGap.ToString(CultureInfo.InvariantCulture);
@@ -761,7 +634,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             return false;
         }
 
-        if (!this.TryParsePositiveDouble(this.BeatSensitivityTextField, "Beat Empfindlichkeit", 0.1, 1000.0, out double ParsedSensitivity, out ValidationError))
+        if (!this.TryParsePositiveDouble(this.BeatSensitivityTextField, "Empfindlichkeit (10–100)", 10.0, 100.0, out double ParsedSensitivity, out ValidationError))
         {
             return false;
         }
@@ -781,7 +654,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         BuiltSettings.SaveAfterBatch = this.SaveAfterBatchField;
         BuiltSettings.PurgeAfterBatch = this.PurgeAfterBatchField;
         BuiltSettings.ExcludedLayerNames = new List<string>(this.ExcludedLayerNamesField);
-        BuiltSettings.UseSelectedOnly = this.UseSelectedOnlyField;
+        BuiltSettings.UseSelectedOnly = Existing.UseSelectedOnly;
 
         BuiltSettings.Presets = new PresetMappingSettings
         {
@@ -801,32 +674,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         BuiltSettings.EndBlur2Length = ParsedEndBlur2Length;
         BuiltSettings.VerticalBlurDirection = ParsedVerticalDir;
         BuiltSettings.HorizontalBlurDirection = ParsedHorizontalDir;
-
-        if (string.Equals(this.SelectedStartDirectionOptionField, StartDirectionHorizontalLabel, StringComparison.Ordinal))
-        {
-            BuiltSettings.StartDirection = ShakeStartDirection.Horizontal;
-        }
-        else
-        {
-            BuiltSettings.StartDirection = ShakeStartDirection.Vertical;
-        }
-
-        if (string.Equals(this.SelectedBlurZoomStartOptionField, BlurZoomOutLabel, StringComparison.Ordinal))
-        {
-            BuiltSettings.BlurZoomStart = BlurZoomStartPreset.BlurZoomOut;
-        }
-        else
-        {
-            BuiltSettings.BlurZoomStart = BlurZoomStartPreset.BlurZoomIn;
-        }
-
+        BuiltSettings.StartDirection = Existing.StartDirection;
+        BuiltSettings.BlurZoomStart = Existing.BlurZoomStart;
         BuiltSettings.AddMotionTileToBlurZoom = this.AddMotionTileToBlurZoomField;
-
-        BeatDetectionMode SelectedMode = BeatDetectionMode.RedOverlay;
-        if (string.Equals(this.SelectedBeatModeOptionField, BeatModeUniversalLabel, StringComparison.Ordinal))
-        {
-            SelectedMode = BeatDetectionMode.UniversalFourZone;
-        }
 
         BeatMarkerTarget SelectedTarget = BeatMarkerTarget.Composition;
         if (string.Equals(this.SelectedMarkerTargetOptionField, MarkerTargetLayerLabel, StringComparison.Ordinal))
@@ -836,7 +686,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         BuiltSettings.BeatDetection = new BeatDetectionSettings
         {
-            Mode = SelectedMode,
+            Mode = Existing.BeatDetection.Mode,
             Sensitivity = ParsedSensitivity,
             MinFrameGap = ParsedMinFrameGap,
             MarkerTarget = SelectedTarget,

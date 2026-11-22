@@ -14,7 +14,7 @@
         <!-- Card 1: Aktuelles .aep-Projekt -->
         <Border Grid.Row="0"
                 Style="{StaticResource CardBorderStyle}"
-                StrokeShape="RoundRectangle 8">
+                StrokeShape="RoundRectangle 6">
             <VerticalStackLayout Spacing="8">
                 <VerticalStackLayout Spacing="2">
                     <Label Text="Backups &amp; Recovery"
@@ -43,7 +43,7 @@
         <!-- Card 2: Snapshot Liste -->
         <Border Grid.Row="1"
                 Style="{StaticResource CardBorderStyle}"
-                StrokeShape="RoundRectangle 8">
+                StrokeShape="RoundRectangle 6">
             <Grid RowDefinitions="Auto, *" RowSpacing="8">
                 <Label Grid.Row="0"
                        Text="VERFÜGBARE SNAPSHOTS (_AEP_BACKUPS)"
@@ -62,7 +62,7 @@
                         <DataTemplate x:DataType="vm:SnapshotItemViewModel">
                             <Border BackgroundColor="{StaticResource SurfaceElevated}"
                                     Stroke="{StaticResource BorderSubtle}"
-                                    StrokeShape="RoundRectangle 6"
+                                    StrokeShape="RoundRectangle 5"
                                     Padding="10,8"
                                     Margin="0,0,0,6">
                                 <Grid ColumnDefinitions="*, Auto"
@@ -82,14 +82,14 @@
                                         <Label Text="{Binding TransactionId}"
                                                Style="{StaticResource MutedCaptionLabelStyle}"
                                                VerticalOptions="Center" />
-                                        <Border BackgroundColor="{StaticResource AccentSubtleBg}"
-                                                Stroke="{StaticResource AccentSubtleBorder}"
-                                                StrokeShape="RoundRectangle 8"
+                                        <Border BackgroundColor="{StaticResource SurfaceCard}"
+                                                Stroke="{StaticResource BorderStrong}"
+                                                StrokeShape="RoundRectangle 4"
                                                 Padding="6,2">
                                             <Label Text="{Binding StatusText}"
                                                    FontSize="10"
                                                    FontFamily="OpenSansSemibold"
-                                                   TextColor="{StaticResource AccentHover}" />
+                                                   TextColor="{StaticResource TextSecondary}" />
                                         </Border>
                                     </HorizontalStackLayout>
 
@@ -101,7 +101,7 @@
                                         <Label Text="{Binding ShortSha256Text, StringFormat='SHA-256: {0}'}"
                                                Style="{StaticResource MutedCaptionLabelStyle}" />
 
-                                        <Border StrokeShape="RoundRectangle 8"
+                                        <Border StrokeShape="RoundRectangle 4"
                                                 Padding="6,1"
                                                 BackgroundColor="{StaticResource StatusErrorBg}"
                                                 Stroke="{StaticResource StatusErrorBorder}">
@@ -152,7 +152,7 @@
         <!-- Card 3: Granulares Reverse-Script -->
         <Border Grid.Row="2"
                 Style="{StaticResource CardBorderStyle}"
-                StrokeShape="RoundRectangle 8">
+                StrokeShape="RoundRectangle 6">
             <VerticalStackLayout Spacing="8">
                 <Label Text="GRANULARES REVERSE-SCRIPT AUSFÜHREN"
                        Style="{StaticResource SectionHeaderLabelStyle}" />

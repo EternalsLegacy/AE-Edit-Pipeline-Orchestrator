@@ -301,5 +301,30 @@ public sealed class PipelineStepsTests
         Assert.Equal("Horizontal", Bridge.RecordedJobs[2].Settings.StartDirection);
     }
 
+    [Fact]
+    public void ValidateSettingsBeatDetectionDefaultsAndSensitivityRangeAreEnforced()
+    {
+        FakeAfterEffectsBridge Bridge = new FakeAfterEffectsBridge();
+        BeatDetectionStep Step01 = new BeatDetectionStep(Bridge);
+        ProjectPreflightState Preflight = new ProjectPreflightState();
+
+        PipelineSettings DefaultSettings = new PipelineSettings();
+        Assert.Equal(BeatDetectionMode.UniversalFourZone, DefaultSettings.BeatDetection.Mode);
+        Assert.Equal(65.0, DefaultSettings.BeatDetection.Sensitivity);
+        Assert.True(Step01.ValidateSettings(DefaultSettings, Preflight).IsValid);
+
+        DefaultSettings.BeatDetection.Sensitivity = 9.9;
+        Assert.False(Step01.ValidateSettings(DefaultSettings, Preflight).IsValid);
+
+        DefaultSettings.BeatDetection.Sensitivity = 100.1;
+        Assert.False(Step01.ValidateSettings(DefaultSettings, Preflight).IsValid);
+
+        DefaultSettings.BeatDetection.Sensitivity = 10.0;
+        Assert.True(Step01.ValidateSettings(DefaultSettings, Preflight).IsValid);
+
+        DefaultSettings.BeatDetection.Sensitivity = 100.0;
+        Assert.True(Step01.ValidateSettings(DefaultSettings, Preflight).IsValid);
+    }
+
     #endregion
 }

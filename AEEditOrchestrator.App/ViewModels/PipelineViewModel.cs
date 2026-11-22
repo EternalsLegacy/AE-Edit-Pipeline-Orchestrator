@@ -12,8 +12,8 @@ public sealed partial class PipelineViewModel : ObservableObject
 {
     #region Constants
 
+    private const string BeatModeUniversalLabel = "Universal (Alle Farben & Cuts)";
     private const string BeatModeRedOverlayLabel = "Rot-Overlay";
-    private const string BeatModeUniversalLabel = "Universal 4-Zonen";
     private const string StartDirectionVerticalLabel = "Vertical";
     private const string StartDirectionHorizontalLabel = "Horizontal";
     private const string BlurZoomInLabel = "BlurZoomIn";
@@ -42,8 +42,8 @@ public sealed partial class PipelineViewModel : ObservableObject
     };
     private readonly IReadOnlyList<string> BeatModeOptionsField = new List<string>
     {
-        BeatModeRedOverlayLabel,
-        BeatModeUniversalLabel
+        BeatModeUniversalLabel,
+        BeatModeRedOverlayLabel
     };
 
     private CancellationTokenSource? ActiveCancellationTokenSourceField = null;
@@ -59,16 +59,13 @@ public sealed partial class PipelineViewModel : ObservableObject
     private string ProjectFullPathTextField = string.Empty;
     private string CompositionNameTextField = "—";
     private string ClipCountTextField = "0 Clips";
-    private bool HasEditClipTagsField = false;
-    private bool HasStage1TagsField = false;
-    private bool HasZoomGroupTagsField = false;
     private bool IsProjectUnsavedWarningField = false;
     private bool HasPreflightWarningField = false;
     private string PreflightWarningTextField = string.Empty;
 
     private string SelectedStartDirectionOptionField = StartDirectionVerticalLabel;
     private string SelectedBlurZoomStartOptionField = BlurZoomInLabel;
-    private string SelectedBeatModeOptionField = BeatModeRedOverlayLabel;
+    private string SelectedBeatModeOptionField = BeatModeUniversalLabel;
     private bool UseSelectedOnlyField = false;
 
     private double ProgressRatioField = 0.0;
@@ -120,14 +117,6 @@ public sealed partial class PipelineViewModel : ObservableObject
         get
         {
             return this.BeatModeOptionsField;
-        }
-    }
-
-    public string CapsLockHintText
-    {
-        get
-        {
-            return "Performance-Tipp: CAPS LOCK aktivieren (pausiert AE-Vorschau)";
         }
     }
 
@@ -258,42 +247,6 @@ public sealed partial class PipelineViewModel : ObservableObject
         }
     }
 
-    public bool HasEditClipTags
-    {
-        get
-        {
-            return this.HasEditClipTagsField;
-        }
-        private set
-        {
-            this.SetProperty(ref this.HasEditClipTagsField, value);
-        }
-    }
-
-    public bool HasStage1Tags
-    {
-        get
-        {
-            return this.HasStage1TagsField;
-        }
-        private set
-        {
-            this.SetProperty(ref this.HasStage1TagsField, value);
-        }
-    }
-
-    public bool HasZoomGroupTags
-    {
-        get
-        {
-            return this.HasZoomGroupTagsField;
-        }
-        private set
-        {
-            this.SetProperty(ref this.HasZoomGroupTagsField, value);
-        }
-    }
-
     public bool IsProjectUnsavedWarning
     {
         get
@@ -389,16 +342,16 @@ public sealed partial class PipelineViewModel : ObservableObject
         }
         set
         {
-            string Normalized = value ?? BeatModeRedOverlayLabel;
+            string Normalized = value ?? BeatModeUniversalLabel;
             if (this.SetProperty(ref this.SelectedBeatModeOptionField, Normalized) && !this.IsSyncingFromStateField)
             {
-                if (string.Equals(Normalized, BeatModeUniversalLabel, StringComparison.Ordinal))
+                if (string.Equals(Normalized, BeatModeRedOverlayLabel, StringComparison.Ordinal))
                 {
-                    this.AppStateField.CurrentSettings.BeatDetection.Mode = BeatDetectionMode.UniversalFourZone;
+                    this.AppStateField.CurrentSettings.BeatDetection.Mode = BeatDetectionMode.RedOverlay;
                 }
                 else
                 {
-                    this.AppStateField.CurrentSettings.BeatDetection.Mode = BeatDetectionMode.RedOverlay;
+                    this.AppStateField.CurrentSettings.BeatDetection.Mode = BeatDetectionMode.UniversalFourZone;
                 }
 
                 this.AppStateField.NotifySettingsUpdated();
@@ -620,13 +573,13 @@ public sealed partial class PipelineViewModel : ObservableObject
                 this.SelectedBlurZoomStartOption = BlurZoomInLabel;
             }
 
-            if (CurrentSettings.BeatDetection.Mode == BeatDetectionMode.UniversalFourZone)
+            if (CurrentSettings.BeatDetection.Mode == BeatDetectionMode.RedOverlay)
             {
-                this.SelectedBeatModeOption = BeatModeUniversalLabel;
+                this.SelectedBeatModeOption = BeatModeRedOverlayLabel;
             }
             else
             {
-                this.SelectedBeatModeOption = BeatModeRedOverlayLabel;
+                this.SelectedBeatModeOption = BeatModeUniversalLabel;
             }
 
             this.UseSelectedOnly = CurrentSettings.UseSelectedOnly;
@@ -754,9 +707,6 @@ public sealed partial class PipelineViewModel : ObservableObject
         }
 
         this.ClipCountText = $"{State.ValidClipCount} Clips";
-        this.HasEditClipTags = State.HasEditClipTags;
-        this.HasStage1Tags = State.HasStage1Tags;
-        this.HasZoomGroupTags = State.HasZoomGroupTags;
         this.IsProjectUnsavedWarning = State.HasActiveComposition && !State.IsProjectSaved;
 
         List<string> Warnings = new List<string>();

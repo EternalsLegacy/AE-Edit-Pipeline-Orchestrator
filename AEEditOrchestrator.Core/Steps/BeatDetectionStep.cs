@@ -77,9 +77,9 @@ public sealed class BeatDetectionStep : BasePipelineStep
 
         if (Settings != null)
         {
-            if (Settings.BeatDetection.Sensitivity <= 0.0)
+            if (Settings.BeatDetection.Sensitivity < 10.0 || Settings.BeatDetection.Sensitivity > 100.0)
             {
-                Errors.Add("BeatDetection.Sensitivity muss größer als 0 sein.");
+                Errors.Add("BeatDetection.Sensitivity muss zwischen 10 und 100 liegen.");
             }
 
             if (Settings.BeatDetection.MinFrameGap < 0)

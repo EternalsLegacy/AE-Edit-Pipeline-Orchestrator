@@ -43,7 +43,7 @@ public sealed class IpcSerializationTests
             BeatDetection = new BeatDetectionSettings
             {
                 Mode = BeatDetectionMode.UniversalFourZone,
-                Sensitivity = 7.5,
+                Sensitivity = 75.0,
                 MinFrameGap = 3,
                 MarkerTarget = BeatMarkerTarget.Layer,
                 OnlyWorkArea = true,
@@ -103,7 +103,7 @@ public sealed class IpcSerializationTests
 
             JsonElement BeatNode = SettingsNode.GetProperty("beatDetection");
             Assert.Equal("UniversalFourZone", BeatNode.GetProperty("mode").GetString());
-            Assert.Equal(7.5, BeatNode.GetProperty("sensitivity").GetDouble());
+            Assert.Equal(75.0, BeatNode.GetProperty("sensitivity").GetDouble());
             Assert.Equal(3, BeatNode.GetProperty("minFrameGap").GetInt32());
             Assert.Equal("Layer", BeatNode.GetProperty("markerTarget").GetString());
             Assert.True(BeatNode.GetProperty("onlyWorkArea").GetBoolean());

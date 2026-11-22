@@ -10,6 +10,8 @@ public sealed class EmbeddedScriptExtractor
     private const string AppFolderName = "AEEditOrchestrator";
     private const string ScriptsFolderName = "scripts";
     private const string ResourcePrefix = "JsxScripts.";
+    private const string AppIconResourceName = "AppAssets.app.ico";
+    private const string AppIconFileName = "app.ico";
 
     #endregion
 
@@ -76,31 +78,75 @@ public sealed class EmbeddedScriptExtractor
                 continue;
             }
 
-            using (Stream? ResourceStream = CurrentAssembly.GetManifestResourceStream(ResourceName))
-            {
-                if (ResourceStream == null)
-                {
-                    continue;
-                }
-
-                byte[] ResourceBytes = EmbeddedScriptExtractor.ReadAllBytes(ResourceStream);
-                string DestinationPath = Path.Combine(this.TargetDirectoryField, ScriptFileName);
-
-                if (EmbeddedScriptExtractor.AreFileBytesIdentical(DestinationPath, ResourceBytes))
-                {
-                    continue;
-                }
-
-                EmbeddedScriptExtractor.WriteFileAtomically(this.TargetDirectoryField, DestinationPath, ResourceBytes);
-            }
+            EmbeddedScriptExtractor.ExtractSingleResource(
+                CurrentAssembly,
+                ResourceName,
+                this.TargetDirectoryField,
+                ScriptFileName);
         }
 
         return this.TargetDirectoryField;
     }
 
+    public string ExtractAppIcon()
+    {
+        DirectoryInfo? ParentDirectory = Directory.GetParent(this.TargetDirectoryField);
+        string IconDirectory = this.TargetDirectoryField;
+        if (ParentDirectory != null)
+        {
+            IconDirectory = ParentDirectory.FullName;
+        }
+
+        if (!Directory.Exists(IconDirectory))
+        {
+            Directory.CreateDirectory(IconDirectory);
+        }
+
+        Assembly CurrentAssembly = typeof(EmbeddedScriptExtractor).Assembly;
+        string DestinationPath = Path.Combine(IconDirectory, EmbeddedScriptExtractor.AppIconFileName);
+
+        bool Extracted = EmbeddedScriptExtractor.ExtractSingleResource(
+            CurrentAssembly,
+            EmbeddedScriptExtractor.AppIconResourceName,
+            IconDirectory,
+            EmbeddedScriptExtractor.AppIconFileName);
+
+        if (!Extracted && !File.Exists(DestinationPath))
+        {
+            return string.Empty;
+        }
+
+        return DestinationPath;
+    }
+
     #endregion
 
     #region Private Methods
+
+    private static bool ExtractSingleResource(
+        Assembly SourceAssembly,
+        string ResourceName,
+        string DestinationDirectory,
+        string DestinationFileName)
+    {
+        using (Stream? ResourceStream = SourceAssembly.GetManifestResourceStream(ResourceName))
+        {
+            if (ResourceStream == null)
+            {
+                return false;
+            }
+
+            byte[] ResourceBytes = EmbeddedScriptExtractor.ReadAllBytes(ResourceStream);
+            string DestinationPath = Path.Combine(DestinationDirectory, DestinationFileName);
+
+            if (!EmbeddedScriptExtractor.AreFileBytesIdentical(DestinationPath, ResourceBytes))
+            {
+                EmbeddedScriptExtractor.WriteFileAtomically(DestinationDirectory, DestinationPath, ResourceBytes);
+            }
+
+            return true;
+        }
+    }
 
     private static byte[] ReadAllBytes(Stream InputStream)
     {
@@ -134,7 +180,7 @@ public sealed class EmbeddedScriptExtractor
     {
         string TempFilePath = Path.Combine(
             TargetDirectory,
-            string.Concat(".script_", Guid.NewGuid().ToString("N"), ".tmp"));
+            string.Concat(".asset_", Guid.NewGuid().ToString("N"), ".tmp"));
 
         try
         {

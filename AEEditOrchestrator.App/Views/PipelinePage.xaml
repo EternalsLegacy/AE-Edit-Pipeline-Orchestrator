@@ -10,60 +10,52 @@
           Padding="14"
           RowSpacing="10">
 
-        <!-- Top Status Banner -->
+        <!-- Compact Status Header -->
         <Border Grid.Row="0"
                 Style="{StaticResource CardBorderStyle}"
-                StrokeShape="RoundRectangle 8"
-                Padding="12,10">
-            <Grid RowDefinitions="Auto, Auto"
-                  RowSpacing="7">
+                StrokeShape="RoundRectangle 6"
+                Padding="12,9">
+            <VerticalStackLayout Spacing="6">
+                <Grid ColumnDefinitions="Auto, *"
+                      ColumnSpacing="12">
 
-                <!-- Row 0: AE Status, Project/Comp Info, Tag Badges -->
-                <Grid Grid.Row="0"
-                      ColumnDefinitions="Auto, *, Auto"
-                      ColumnSpacing="10">
-
-                    <!-- AE Connection Pill -->
-                    <Border Grid.Column="0"
-                            StrokeShape="RoundRectangle 12"
-                            Padding="8,4"
-                            VerticalOptions="Center"
-                            BackgroundColor="{StaticResource StatusNeutralBg}"
-                            Stroke="{StaticResource StatusNeutralBorder}">
-                        <Border.Triggers>
-                            <DataTrigger TargetType="Border"
-                                         Binding="{Binding IsAfterEffectsConnected}"
-                                         Value="True">
-                                <Setter Property="BackgroundColor" Value="{StaticResource StatusSuccessBg}" />
-                                <Setter Property="Stroke" Value="{StaticResource StatusSuccessBorder}" />
-                            </DataTrigger>
-                        </Border.Triggers>
-                        <HorizontalStackLayout Spacing="6" VerticalOptions="Center">
-                            <Border WidthRequest="8"
-                                    HeightRequest="8"
-                                    StrokeThickness="0"
-                                    StrokeShape="RoundRectangle 4"
-                                    VerticalOptions="Center"
-                                    BackgroundColor="{StaticResource StatusNeutral}">
-                                <Border.Triggers>
-                                    <DataTrigger TargetType="Border"
-                                                 Binding="{Binding IsAfterEffectsConnected}"
-                                                 Value="True">
-                                        <Setter Property="BackgroundColor" Value="{StaticResource StatusSuccess}" />
-                                    </DataTrigger>
-                                </Border.Triggers>
-                            </Border>
-                            <Label Text="{Binding ConnectionStatusText}"
-                                   FontSize="11"
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="{StaticResource TextPrimary}"
-                                   VerticalOptions="Center" />
-                        </HorizontalStackLayout>
-                    </Border>
+                    <!-- Connection Status -->
+                    <HorizontalStackLayout Grid.Column="0"
+                                           Spacing="7"
+                                           VerticalOptions="Center">
+                        <Border WidthRequest="8"
+                                HeightRequest="8"
+                                StrokeThickness="0"
+                                StrokeShape="RoundRectangle 4"
+                                VerticalOptions="Center"
+                                BackgroundColor="{StaticResource StatusNeutral}">
+                            <Border.Triggers>
+                                <DataTrigger TargetType="Border"
+                                             Binding="{Binding IsAfterEffectsConnected}"
+                                             Value="True">
+                                    <Setter Property="BackgroundColor" Value="{StaticResource StatusSuccess}" />
+                                </DataTrigger>
+                            </Border.Triggers>
+                        </Border>
+                        <Label Text="{Binding ConnectionStatusText}"
+                               FontSize="12"
+                               FontFamily="OpenSansSemibold"
+                               TextColor="{StaticResource TextSecondary}"
+                               VerticalOptions="Center">
+                            <Label.Triggers>
+                                <DataTrigger TargetType="Label"
+                                             Binding="{Binding IsAfterEffectsConnected}"
+                                             Value="True">
+                                    <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                                </DataTrigger>
+                            </Label.Triggers>
+                        </Label>
+                    </HorizontalStackLayout>
 
                     <!-- Active Project, Composition & Clip Count -->
                     <HorizontalStackLayout Grid.Column="1"
-                                           Spacing="6"
+                                           Spacing="8"
+                                           HorizontalOptions="End"
                                            VerticalOptions="Center">
                         <Label Text="{Binding ProjectNameText}"
                                FontFamily="OpenSansSemibold"
@@ -85,145 +77,38 @@
                                VerticalOptions="Center" />
                         <Label Text="{Binding ClipCountText}"
                                FontFamily="OpenSansSemibold"
-                               FontSize="11.5"
-                               TextColor="{StaticResource AccentHover}"
+                               FontSize="12"
+                               TextColor="{StaticResource TextSecondary}"
                                VerticalOptions="Center" />
-                        <Border IsVisible="{Binding IsProjectUnsavedWarning}"
-                                BackgroundColor="{StaticResource StatusWarningBg}"
-                                Stroke="{StaticResource StatusWarningBorder}"
-                                StrokeShape="RoundRectangle 8"
-                                Padding="6,2"
-                                VerticalOptions="Center">
-                            <Label Text="Ungespeichert"
-                                   FontSize="10"
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="{StaticResource StatusWarning}" />
-                        </Border>
-                    </HorizontalStackLayout>
-
-                    <!-- Detected Tags -->
-                    <HorizontalStackLayout Grid.Column="2"
-                                           Spacing="4"
-                                           VerticalOptions="Center">
-                        <Border StrokeShape="RoundRectangle 8"
-                                Padding="6,2"
-                                BackgroundColor="{StaticResource StatusNeutralBg}"
-                                Stroke="{StaticResource StatusNeutralBorder}">
-                            <Border.Triggers>
-                                <DataTrigger TargetType="Border"
-                                             Binding="{Binding HasEditClipTags}"
-                                             Value="True">
-                                    <Setter Property="BackgroundColor" Value="{StaticResource AccentSubtleBg}" />
-                                    <Setter Property="Stroke" Value="{StaticResource AccentSubtleBorder}" />
-                                </DataTrigger>
-                            </Border.Triggers>
-                            <Label Text="[EDIT_CLIP]"
-                                   FontSize="10"
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="{StaticResource TextMuted}">
-                                <Label.Triggers>
-                                    <DataTrigger TargetType="Label"
-                                                 Binding="{Binding HasEditClipTags}"
-                                                 Value="True">
-                                        <Setter Property="TextColor" Value="{StaticResource AccentHover}" />
-                                    </DataTrigger>
-                                </Label.Triggers>
-                            </Label>
-                        </Border>
-
-                        <Border StrokeShape="RoundRectangle 8"
-                                Padding="6,2"
-                                BackgroundColor="{StaticResource StatusNeutralBg}"
-                                Stroke="{StaticResource StatusNeutralBorder}">
-                            <Border.Triggers>
-                                <DataTrigger TargetType="Border"
-                                             Binding="{Binding HasStage1Tags}"
-                                             Value="True">
-                                    <Setter Property="BackgroundColor" Value="{StaticResource StatusSuccessBg}" />
-                                    <Setter Property="Stroke" Value="{StaticResource StatusSuccessBorder}" />
-                                </DataTrigger>
-                            </Border.Triggers>
-                            <Label Text="[DONE_PIPELINE_1]"
-                                   FontSize="10"
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="{StaticResource TextMuted}">
-                                <Label.Triggers>
-                                    <DataTrigger TargetType="Label"
-                                                 Binding="{Binding HasStage1Tags}"
-                                                 Value="True">
-                                        <Setter Property="TextColor" Value="{StaticResource StatusSuccess}" />
-                                    </DataTrigger>
-                                </Label.Triggers>
-                            </Label>
-                        </Border>
-
-                        <Border StrokeShape="RoundRectangle 8"
-                                Padding="6,2"
-                                BackgroundColor="{StaticResource StatusNeutralBg}"
-                                Stroke="{StaticResource StatusNeutralBorder}">
-                            <Border.Triggers>
-                                <DataTrigger TargetType="Border"
-                                             Binding="{Binding HasZoomGroupTags}"
-                                             Value="True">
-                                    <Setter Property="BackgroundColor" Value="{StaticResource StatusSuccessBg}" />
-                                    <Setter Property="Stroke" Value="{StaticResource StatusSuccessBorder}" />
-                                </DataTrigger>
-                            </Border.Triggers>
-                            <Label Text="[DONE_ZOOM_GROUP]"
-                                   FontSize="10"
-                                   FontFamily="OpenSansSemibold"
-                                   TextColor="{StaticResource TextMuted}">
-                                <Label.Triggers>
-                                    <DataTrigger TargetType="Label"
-                                                 Binding="{Binding HasZoomGroupTags}"
-                                                 Value="True">
-                                        <Setter Property="TextColor" Value="{StaticResource StatusSuccess}" />
-                                    </DataTrigger>
-                                </Label.Triggers>
-                            </Label>
-                        </Border>
-                    </HorizontalStackLayout>
-                </Grid>
-
-                <!-- Row 1: CAPS LOCK Performance Hint + Optional Preflight Warning -->
-                <Grid Grid.Row="1"
-                      ColumnDefinitions="Auto, *"
-                      ColumnSpacing="8">
-                    <Border Grid.Column="0"
-                            BackgroundColor="{StaticResource StatusWarningBg}"
-                            Stroke="{StaticResource StatusWarningBorder}"
-                            StrokeShape="RoundRectangle 6"
-                            Padding="8,3"
-                            VerticalOptions="Center">
-                        <Label Text="{Binding CapsLockHintText}"
+                        <Label IsVisible="{Binding IsProjectUnsavedWarning}"
+                               Text="(Ungespeichert)"
                                FontSize="11"
                                FontFamily="OpenSansSemibold"
-                               TextColor="{StaticResource StatusWarning}" />
-                    </Border>
-
-                    <Border Grid.Column="1"
-                            IsVisible="{Binding HasPreflightWarning}"
-                            BackgroundColor="{StaticResource StatusErrorBg}"
-                            Stroke="{StaticResource StatusErrorBorder}"
-                            StrokeShape="RoundRectangle 6"
-                            Padding="8,3"
-                            VerticalOptions="Center">
-                        <Label Text="{Binding PreflightWarningText}"
-                               FontSize="11"
-                               TextColor="{StaticResource StatusError}"
-                               LineBreakMode="TailTruncation" />
-                    </Border>
+                               TextColor="{StaticResource StatusWarning}"
+                               VerticalOptions="Center" />
+                    </HorizontalStackLayout>
                 </Grid>
 
-            </Grid>
+                <!-- Optional Preflight Warning -->
+                <Border IsVisible="{Binding HasPreflightWarning}"
+                        BackgroundColor="{StaticResource StatusErrorBg}"
+                        Stroke="{StaticResource StatusErrorBorder}"
+                        StrokeShape="RoundRectangle 4"
+                        Padding="8,4">
+                    <Label Text="{Binding PreflightWarningText}"
+                           FontSize="11"
+                           TextColor="{StaticResource StatusError}"
+                           LineBreakMode="TailTruncation" />
+                </Border>
+            </VerticalStackLayout>
         </Border>
 
         <!-- Main Two-Column Content -->
         <Grid Grid.Row="1"
-              ColumnDefinitions="1.05*, 0.95*"
+              ColumnDefinitions="1.06*, 0.94*"
               ColumnSpacing="12">
 
-            <!-- Left Column: Step List + Inline Quick Options -->
+            <!-- Left Column: Step List + Quick Options -->
             <Grid Grid.Column="0"
                   RowDefinitions="*, Auto"
                   RowSpacing="10">
@@ -231,18 +116,13 @@
                 <!-- Pipeline Steps Card -->
                 <Border Grid.Row="0"
                         Style="{StaticResource CardBorderStyle}"
-                        StrokeShape="RoundRectangle 8"
-                        Padding="10">
+                        StrokeShape="RoundRectangle 6"
+                        Padding="12">
                     <Grid RowDefinitions="Auto, *"
                           RowSpacing="8">
-                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
-                            <Label Text="PIPELINE-SCHRITTE"
-                                   Style="{StaticResource SectionHeaderLabelStyle}" />
-                            <Label Grid.Column="1"
-                                   Text="Auto-Abhängigkeiten aktiv"
-                                   Style="{StaticResource MutedCaptionLabelStyle}"
-                                   VerticalOptions="Center" />
-                        </Grid>
+                        <Label Grid.Row="0"
+                               Text="PIPELINE-SCHRITTE"
+                               Style="{StaticResource SectionHeaderLabelStyle}" />
 
                         <ScrollView Grid.Row="1">
                             <VerticalStackLayout BindableLayout.ItemsSource="{Binding Steps}"
@@ -251,7 +131,7 @@
                                     <DataTemplate x:DataType="vm:PipelineStepItemViewModel">
                                         <Border BackgroundColor="{StaticResource SurfaceElevated}"
                                                 Stroke="{StaticResource BorderSubtle}"
-                                                StrokeShape="RoundRectangle 6"
+                                                StrokeShape="RoundRectangle 5"
                                                 Padding="8,5">
                                             <Grid ColumnDefinitions="Auto, *, Auto"
                                                   ColumnSpacing="8">
@@ -277,23 +157,11 @@
 
                                                 <Border Grid.Column="2"
                                                         VerticalOptions="Center"
-                                                        StrokeShape="RoundRectangle 9"
-                                                        Padding="7,2"
-                                                        BackgroundColor="{StaticResource StatusNeutralBg}"
-                                                        Stroke="{StaticResource StatusNeutralBorder}">
+                                                        StrokeShape="RoundRectangle 4"
+                                                        Padding="6,2"
+                                                        BackgroundColor="{StaticResource SurfaceCard}"
+                                                        Stroke="{StaticResource BorderSubtle}">
                                                     <Border.Triggers>
-                                                        <DataTrigger TargetType="Border"
-                                                                     Binding="{Binding BadgeKind}"
-                                                                     Value="TagBypass">
-                                                            <Setter Property="BackgroundColor" Value="{StaticResource StatusSuccessBg}" />
-                                                            <Setter Property="Stroke" Value="{StaticResource StatusSuccessBorder}" />
-                                                        </DataTrigger>
-                                                        <DataTrigger TargetType="Border"
-                                                                     Binding="{Binding BadgeKind}"
-                                                                     Value="Sync">
-                                                            <Setter Property="BackgroundColor" Value="{StaticResource AccentSubtleBg}" />
-                                                            <Setter Property="Stroke" Value="{StaticResource AccentSubtleBorder}" />
-                                                        </DataTrigger>
                                                         <DataTrigger TargetType="Border"
                                                                      Binding="{Binding BadgeKind}"
                                                                      Value="Warning">
@@ -303,18 +171,13 @@
                                                     </Border.Triggers>
                                                     <Label Text="{Binding DependencyBadgeText}"
                                                            FontSize="10"
-                                                           FontFamily="OpenSansSemibold"
+                                                           FontFamily="OpenSansRegular"
                                                            TextColor="{StaticResource TextSecondary}">
                                                         <Label.Triggers>
                                                             <DataTrigger TargetType="Label"
                                                                          Binding="{Binding BadgeKind}"
                                                                          Value="TagBypass">
                                                                 <Setter Property="TextColor" Value="{StaticResource StatusSuccess}" />
-                                                            </DataTrigger>
-                                                            <DataTrigger TargetType="Label"
-                                                                         Binding="{Binding BadgeKind}"
-                                                                         Value="Sync">
-                                                                <Setter Property="TextColor" Value="{StaticResource AccentHover}" />
                                                             </DataTrigger>
                                                             <DataTrigger TargetType="Label"
                                                                          Binding="{Binding BadgeKind}"
@@ -333,14 +196,14 @@
                     </Grid>
                 </Border>
 
-                <!-- Inline Quick Options Card -->
+                <!-- Quick Options Card -->
                 <Border Grid.Row="1"
                         Style="{StaticResource CardBorderStyle}"
-                        StrokeShape="RoundRectangle 8"
-                        Padding="10">
+                        StrokeShape="RoundRectangle 6"
+                        Padding="12,10">
                     <Grid RowDefinitions="Auto, Auto"
-                          ColumnDefinitions="*, *, *"
-                          RowSpacing="6"
+                          ColumnDefinitions="0.88*, 0.92*, 1.2*"
+                          RowSpacing="8"
                           ColumnSpacing="8">
 
                         <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="3">
@@ -397,21 +260,21 @@
                 <!-- Live Progress Card -->
                 <Border Grid.Row="0"
                         Style="{StaticResource CardBorderStyle}"
-                        StrokeShape="RoundRectangle 8"
-                        Padding="10">
+                        StrokeShape="RoundRectangle 6"
+                        Padding="12,10">
                     <VerticalStackLayout Spacing="6">
                         <Grid ColumnDefinitions="*, Auto">
-                            <Label Text="LIVE-AUSFÜHRUNG"
+                            <Label Text="STATUS"
                                    Style="{StaticResource SectionHeaderLabelStyle}" />
                             <Label Grid.Column="1"
                                    Text="{Binding ProgressPercentText}"
                                    FontFamily="OpenSansSemibold"
-                                   FontSize="13"
-                                   TextColor="{StaticResource AccentHover}" />
+                                   FontSize="12.5"
+                                   TextColor="{StaticResource TextPrimary}" />
                         </Grid>
 
                         <ProgressBar Progress="{Binding ProgressRatio}"
-                                     HeightRequest="8" />
+                                     HeightRequest="6" />
 
                         <Label Text="{Binding CurrentStepStatusText}"
                                FontFamily="OpenSansSemibold"
@@ -424,7 +287,7 @@
                                LineBreakMode="TailTruncation" />
 
                         <Border IsVisible="{Binding HasRollbackStatus}"
-                                StrokeShape="RoundRectangle 6"
+                                StrokeShape="RoundRectangle 4"
                                 Padding="8,4"
                                 BackgroundColor="{StaticResource StatusWarningBg}"
                                 Stroke="{StaticResource StatusWarningBorder}">
@@ -456,12 +319,12 @@
                 <!-- Live Log Card -->
                 <Border Grid.Row="1"
                         Style="{StaticResource CardBorderStyle}"
-                        StrokeShape="RoundRectangle 8"
-                        Padding="10">
+                        StrokeShape="RoundRectangle 6"
+                        Padding="12,10">
                     <Grid RowDefinitions="Auto, *"
                           RowSpacing="6">
                         <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
-                            <Label Text="LIVE-LOG"
+                            <Label Text="PROTOKOLL"
                                    Style="{StaticResource SectionHeaderLabelStyle}"
                                    VerticalOptions="Center" />
                             <Button Grid.Column="1"
