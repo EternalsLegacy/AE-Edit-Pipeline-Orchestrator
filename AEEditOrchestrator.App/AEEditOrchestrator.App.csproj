@@ -20,6 +20,17 @@
 		<TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
 	</PropertyGroup>
 
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<SelfContained>true</SelfContained>
+		<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+		<PublishSingleFile>true</PublishSingleFile>
+		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+		<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+		<DebugType>none</DebugType>
+		<DebugSymbols>false</DebugSymbols>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
 		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
@@ -30,8 +41,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<EmbeddedResource Include="Resources\Scripts\jsx\*.jsx" LogicalName="JsxScripts.%(Filename)%(Extension)" />
+		<EmbeddedResource Include="Resources\Scripts\jsx\*.jsxinc" LogicalName="JsxScripts.%(Filename)%(Extension)" />
 		<None Update="Resources\Scripts\jsx\**\*">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Never</CopyToPublishDirectory>
 		</None>
 	</ItemGroup>
 

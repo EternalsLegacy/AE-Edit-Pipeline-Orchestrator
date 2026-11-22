@@ -1,4 +1,5 @@
-﻿using AEEditOrchestrator.App.ViewModels;
+﻿using AEEditOrchestrator.App.Services;
+using AEEditOrchestrator.App.ViewModels;
 using AEEditOrchestrator.App.Views;
 using AEEditOrchestrator.Core.Engine;
 using AEEditOrchestrator.Core.Interfaces;
@@ -16,6 +17,9 @@ public static class MauiProgram
 
     public static MauiApp CreateMauiApp()
     {
+        EmbeddedScriptExtractor ScriptExtractor = new EmbeddedScriptExtractor();
+        string ExtractedScriptsDirectory = ScriptExtractor.ExtractAllScripts();
+
         MauiAppBuilder Builder = MauiApp.CreateBuilder();
         Builder
             .UseMauiApp<App>()
@@ -30,7 +34,7 @@ public static class MauiProgram
 #endif
 
         // Infrastructure
-        Builder.Services.AddSingleton<IpcPaths>();
+        Builder.Services.AddSingleton<IpcPaths>(ServiceProvider => new IpcPaths(null, ExtractedScriptsDirectory));
         Builder.Services.AddSingleton<IAfterEffectsBridge, AfterEffectsCliBridge>();
         Builder.Services.AddSingleton<ITransactionManager, FileSnapshotTransactionManager>();
         Builder.Services.AddSingleton<ISettingsStore, JsonSettingsStore>();
