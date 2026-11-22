@@ -42,6 +42,8 @@ _AEP_Backups/
 *.aep
 *.aepx
 ipc/
+!AEEditOrchestrator.Core/Models/Ipc/
+!AEEditOrchestrator.Core/Models/Ipc/**
 job.json
 heartbeat.json
 result.json
