@@ -1,0 +1,53 @@
+# Build & IDE outputs
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.dbmdl
+*.jfm
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.log
+*.cache
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# MAUI / Windows Packaging
+AppPackages/
+BundleArtifacts/
+*.appx
+*.appxbundle
+*.appxupload
+*.msix
+*.msixbundle
+*.msixupload
+*.cer
+*.pfx
+
+# Local Release Publish folder
+Temp/
+/Temp/
+
+# After Effects projects, backups & runtime IPC artifacts
+_AEP_Backups/
+*.aep
+*.aepx
+ipc/
+job.json
+heartbeat.json
+result.json
+*.restore.tmp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
