@@ -31,10 +31,16 @@ function runStep(job) {
     var slice = getBatchSlice(totalClips, job.batchStartIndex, job.batchSize);
     var processedCount = 0;
     var skippedCount = 0;
+    var aborted = false;
 
     safeBeginUndoGroup("AE Orchestrator: Apply FadeInOut");
     try {
         for (var idx = slice.startIndex; idx < slice.endIndex; idx++) {
+            if (isAbortRequested()) {
+                aborted = true;
+                break;
+            }
+
             var clipLayer = targetLayers[idx];
             var existingNum = extractClipNumber(clipLayer.comment);
             var clipNum = (existingNum !== null) ? existingNum : (idx + 1);
@@ -81,6 +87,10 @@ function runStep(job) {
         } else {
             deselectAllLayers(comp);
         }
+    }
+
+    if (aborted) {
+        return buildAbortedResult(jobId, comp, "FadeInOut sauber abgebrochen.");
     }
 
     return buildOkResult(jobId, comp, {

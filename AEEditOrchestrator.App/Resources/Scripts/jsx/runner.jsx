@@ -104,7 +104,12 @@
             throw new Error("Ziel-Script definiert keine Funktion runStep(job): " + scriptFile);
         }
 
-        var result = stepFn(job);
+        var result = null;
+        if (isAbortRequested()) {
+            result = buildAbortedResult(jobId, getSafeActiveComp(), "Abbruch angefordert vor Ausführung von " + scriptFile + ".");
+        } else {
+            result = stepFn(job);
+        }
         closeAllUndoGroups();
 
         if (!result) {

@@ -583,6 +583,34 @@ function writeResultJson(resultObj) {
     }
 }
 
+function isAbortRequested() {
+    try {
+        var ipcFolder = getIpcFolder();
+        var abortFile = new File(ipcFolder.fsName + "/abort.flag");
+        return abortFile.exists;
+    } catch (e) {
+        return false;
+    }
+}
+
+function buildAbortedResult(jobId, comp, message) {
+    return {
+        jobId: jobId ? String(jobId) : "",
+        status: "aborted",
+        projectPath: getSafeProjectPath(),
+        compositionName: getSafeCompName(comp),
+        totalClips: 0,
+        processedInBatch: 0,
+        skippedInBatch: 0,
+        hasMoreBatches: false,
+        nextBatchIndex: 0,
+        detectedState: null,
+        error: null,
+        errorLine: null,
+        message: message ? String(message) : "Ausführung durch Benutzerabbruch beendet."
+    };
+}
+
 function getSafeProjectPath() {
     try {
         if (app.project && app.project.file !== null) {
@@ -736,6 +764,9 @@ function normalizeExcludedNames(excludedNames) {
 
 function isProtectedGlobalLayer(layer, totalLayers, excludedNames) {
     if (!layer) {
+        return true;
+    }
+    if (layer.locked) {
         return true;
     }
     if (layer.index === 1 || layer.index === totalLayers) {

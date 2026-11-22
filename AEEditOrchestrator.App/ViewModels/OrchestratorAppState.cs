@@ -9,9 +9,12 @@ public sealed class OrchestratorAppState
 
     private readonly ISettingsStore SettingsStoreField;
     private readonly SemaphoreSlim InitSemaphoreField = new SemaphoreSlim(1, 1);
+    private readonly object OperationLockField = new object();
     private PipelineSettings CurrentSettingsField = new PipelineSettings();
     private ProjectPreflightState LastPreflightStateField = new ProjectPreflightState();
     private bool IsInitializedField = false;
+    private bool IsOperationActiveField = false;
+    private string ActiveOperationNameField = string.Empty;
 
     #endregion
 
@@ -19,6 +22,7 @@ public sealed class OrchestratorAppState
 
     public event EventHandler? SettingsUpdated;
     public event EventHandler? PreflightStateUpdated;
+    public event EventHandler? OperationStateChanged;
 
     #endregion
 
@@ -53,6 +57,28 @@ public sealed class OrchestratorAppState
         get
         {
             return this.IsInitializedField;
+        }
+    }
+
+    public bool IsOperationActive
+    {
+        get
+        {
+            lock (this.OperationLockField)
+            {
+                return this.IsOperationActiveField;
+            }
+        }
+    }
+
+    public string ActiveOperationName
+    {
+        get
+        {
+            lock (this.OperationLockField)
+            {
+                return this.ActiveOperationNameField;
+            }
         }
     }
 
@@ -94,6 +120,39 @@ public sealed class OrchestratorAppState
         }
     }
 
+    public bool TryBeginOperation(string OperationName)
+    {
+        lock (this.OperationLockField)
+        {
+            if (this.IsOperationActiveField)
+            {
+                return false;
+            }
+
+            this.IsOperationActiveField = true;
+            this.ActiveOperationNameField = OperationName ?? string.Empty;
+        }
+
+        this.RaiseOperationStateChanged();
+        return true;
+    }
+
+    public void EndOperation()
+    {
+        lock (this.OperationLockField)
+        {
+            if (!this.IsOperationActiveField)
+            {
+                return;
+            }
+
+            this.IsOperationActiveField = false;
+            this.ActiveOperationNameField = string.Empty;
+        }
+
+        this.RaiseOperationStateChanged();
+    }
+
     public async Task SaveSettingsAsync(CancellationToken CancellationToken = default)
     {
         await this.SettingsStoreField.SaveAsync(this.CurrentSettingsField, CancellationToken);
@@ -113,6 +172,19 @@ public sealed class OrchestratorAppState
     {
         this.LastPreflightStateField = State ?? new ProjectPreflightState();
         EventHandler? Handler = this.PreflightStateUpdated;
+        if (Handler != null)
+        {
+            Handler(this, EventArgs.Empty);
+        }
+    }
+
+    #endregion
+
+    #region Private Methods
+
+    private void RaiseOperationStateChanged()
+    {
+        EventHandler? Handler = this.OperationStateChanged;
         if (Handler != null)
         {
             Handler(this, EventArgs.Empty);

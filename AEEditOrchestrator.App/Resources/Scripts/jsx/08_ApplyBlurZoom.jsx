@@ -76,10 +76,16 @@ function runStep(job) {
     var slice = getBatchSlice(totalClips, job.batchStartIndex, job.batchSize);
     var processedCount = 0;
     var skippedCount = 0;
+    var aborted = false;
 
     safeBeginUndoGroup("AE Orchestrator: Apply BlurZoom");
     try {
         for (var idx = slice.startIndex; idx < slice.endIndex; idx++) {
+            if (isAbortRequested()) {
+                aborted = true;
+                break;
+            }
+
             var groupLayer = zoomGroups[idx];
             var clipTag = extractClipTag(groupLayer.comment);
             var existingNum = extractClipNumber(groupLayer.comment);
@@ -129,6 +135,10 @@ function runStep(job) {
         } else {
             deselectAllLayers(comp);
         }
+    }
+
+    if (aborted) {
+        return buildAbortedResult(jobId, comp, "BlurZoom sauber abgebrochen.");
     }
 
     return buildOkResult(jobId, comp, {

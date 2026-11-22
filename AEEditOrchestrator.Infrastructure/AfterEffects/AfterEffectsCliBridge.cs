@@ -13,7 +13,10 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
     #region Constants
 
     private const int DefaultWatchdogTimeoutSeconds = 45;
-    private const int RestartReadyTimeoutMs = 15000;
+    private const int GracefulAbortWaitSeconds = 15;
+    private const int GracefulCloseWaitMs = 3000;
+    private const int ProcessExitWaitTimeoutMs = 8000;
+    private const int DirectOpenReadyTimeoutMs = 10000;
     private const int RestartPollIntervalMs = 250;
     private const int CloseHandleReleaseDelayMs = 150;
     private const string OpenProjectScriptCommand = "__open_project__";
@@ -27,6 +30,7 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
     private readonly IpcPaths PathsField;
     private readonly IpcFileWatcher WatcherField;
     private readonly UTF8Encoding Utf8NoBomEncodingField = new UTF8Encoding(false);
+    private readonly SemaphoreSlim ExecutionLockField = new SemaphoreSlim(1, 1);
 
     #endregion
 
@@ -93,6 +97,219 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         ArgumentNullException.ThrowIfNull(Payload);
         ArgumentNullException.ThrowIfNull(Settings);
 
+        await this.ExecutionLockField.WaitAsync(CancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await this.ExecuteJobCoreAsync(
+                Payload,
+                Settings,
+                HeartbeatProgress,
+                CancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            this.ExecutionLockField.Release();
+        }
+    }
+
+    public async Task<bool> CloseProjectWithoutSavingAsync(
+        PipelineSettings Settings,
+        CancellationToken CancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(Settings);
+
+        await this.ExecutionLockField.WaitAsync(CancellationToken).ConfigureAwait(false);
+        try
+        {
+            CancellationToken.ThrowIfCancellationRequested();
+
+            if (!this.IsAfterEffectsRunning())
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(Settings.AfterEffectsExecutablePath) || !File.Exists(Settings.AfterEffectsExecutablePath))
+            {
+                return false;
+            }
+
+            string ScriptToRun = this.PathsField.CloseNoSaveScriptPath;
+            if (!File.Exists(ScriptToRun))
+            {
+                ScriptToRun = this.PathsField.RunnerScriptPath;
+            }
+
+            if (!File.Exists(ScriptToRun))
+            {
+                return false;
+            }
+
+            string JobId = Guid.NewGuid().ToString("N");
+            JobPayload Payload = JobPayload.FromSettings(
+                JobId,
+                AfterEffectsCliBridge.CloseNoSaveScriptCommand,
+                Settings,
+                0,
+                SaveAfterBatchOverride: false,
+                PurgeAfterBatchOverride: false);
+
+            await this.PrepareAndWriteJobFilesAsync(Payload, CancellationToken).ConfigureAwait(false);
+
+            StepResult Result = await this.ExecuteScriptAndWaitAsync(
+                JobId,
+                ScriptToRun,
+                Settings,
+                null,
+                CancellationToken).ConfigureAwait(false);
+
+            if (Result.IsOk)
+            {
+                await Task.Delay(AfterEffectsCliBridge.CloseHandleReleaseDelayMs, CancellationToken).ConfigureAwait(false);
+                return true;
+            }
+
+            return false;
+        }
+        finally
+        {
+            this.ExecutionLockField.Release();
+        }
+    }
+
+    public async Task<bool> OpenProjectAsync(
+        string ProjectPath,
+        PipelineSettings Settings,
+        CancellationToken CancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(Settings);
+
+        await this.ExecutionLockField.WaitAsync(CancellationToken).ConfigureAwait(false);
+        try
+        {
+            CancellationToken.ThrowIfCancellationRequested();
+
+            if (string.IsNullOrWhiteSpace(ProjectPath) || !File.Exists(ProjectPath))
+            {
+                return false;
+            }
+
+            string FullProjectPath = Path.GetFullPath(ProjectPath);
+
+            if (this.IsAfterEffectsRunning())
+            {
+                string JobId = Guid.NewGuid().ToString("N");
+                JobPayload Payload = JobPayload.FromSettings(
+                    JobId,
+                    AfterEffectsCliBridge.OpenProjectScriptCommand,
+                    Settings,
+                    0,
+                    SaveAfterBatchOverride: false,
+                    PurgeAfterBatchOverride: false,
+                    ProjectToOpen: FullProjectPath);
+
+                StepResult Result = await this.ExecuteJobCoreAsync(
+                    Payload,
+                    Settings,
+                    null,
+                    CancellationToken).ConfigureAwait(false);
+                return Result.IsOk;
+            }
+
+            return await this.LaunchAfterEffectsWithProjectAsync(
+                FullProjectPath,
+                Settings,
+                CancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            this.ExecutionLockField.Release();
+        }
+    }
+
+    public async Task<bool> SaveProjectAsync(
+        PipelineSettings Settings,
+        CancellationToken CancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(Settings);
+
+        await this.ExecutionLockField.WaitAsync(CancellationToken).ConfigureAwait(false);
+        try
+        {
+            CancellationToken.ThrowIfCancellationRequested();
+
+            if (!this.IsAfterEffectsRunning())
+            {
+                return false;
+            }
+
+            string JobId = Guid.NewGuid().ToString("N");
+            JobPayload Payload = JobPayload.FromSettings(
+                JobId,
+                AfterEffectsCliBridge.SaveProjectScriptCommand,
+                Settings,
+                0,
+                SaveAfterBatchOverride: false,
+                PurgeAfterBatchOverride: false);
+
+            StepResult Result = await this.ExecuteJobCoreAsync(
+                Payload,
+                Settings,
+                null,
+                CancellationToken).ConfigureAwait(false);
+            return Result.IsOk;
+        }
+        finally
+        {
+            this.ExecutionLockField.Release();
+        }
+    }
+
+    public async Task<bool> TryRestartAfterEffectsAsync(
+        PipelineSettings Settings,
+        CancellationToken CancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(Settings);
+
+        await this.ExecutionLockField.WaitAsync(CancellationToken).ConfigureAwait(false);
+        try
+        {
+            CancellationToken.ThrowIfCancellationRequested();
+
+            await this.ShutdownRunningAfterEffectsProcessesAsync(CancellationToken).ConfigureAwait(false);
+
+            Stopwatch Timer = Stopwatch.StartNew();
+            while (this.IsAfterEffectsRunning() && Timer.ElapsedMilliseconds < AfterEffectsCliBridge.ProcessExitWaitTimeoutMs)
+            {
+                CancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(AfterEffectsCliBridge.RestartPollIntervalMs, CancellationToken).ConfigureAwait(false);
+            }
+
+            return !this.IsAfterEffectsRunning();
+        }
+        finally
+        {
+            this.ExecutionLockField.Release();
+        }
+    }
+
+    public void CleanupIpcFiles()
+    {
+        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.JobFilePath);
+        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.HeartbeatFilePath);
+        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.ResultFilePath);
+        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.AbortFlagFilePath);
+    }
+
+    #endregion
+
+    #region Private Methods
+
+    private async Task<StepResult> ExecuteJobCoreAsync(
+        JobPayload Payload,
+        PipelineSettings Settings,
+        IProgress<HeartbeatMessage>? HeartbeatProgress,
+        CancellationToken CancellationToken)
+    {
         CancellationToken.ThrowIfCancellationRequested();
 
         if (string.IsNullOrWhiteSpace(Payload.JobId))
@@ -130,207 +347,13 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
             CancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<bool> CloseProjectWithoutSavingAsync(
-        PipelineSettings Settings,
-        CancellationToken CancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(Settings);
-
-        CancellationToken.ThrowIfCancellationRequested();
-
-        if (!this.IsAfterEffectsRunning())
-        {
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(Settings.AfterEffectsExecutablePath) || !File.Exists(Settings.AfterEffectsExecutablePath))
-        {
-            return false;
-        }
-
-        string ScriptToRun = this.PathsField.CloseNoSaveScriptPath;
-        if (!File.Exists(ScriptToRun))
-        {
-            ScriptToRun = this.PathsField.RunnerScriptPath;
-        }
-
-        if (!File.Exists(ScriptToRun))
-        {
-            return false;
-        }
-
-        string JobId = Guid.NewGuid().ToString("N");
-        JobPayload Payload = JobPayload.FromSettings(
-            JobId,
-            AfterEffectsCliBridge.CloseNoSaveScriptCommand,
-            Settings,
-            0,
-            SaveAfterBatchOverride: false,
-            PurgeAfterBatchOverride: false);
-
-        await this.PrepareAndWriteJobFilesAsync(Payload, CancellationToken).ConfigureAwait(false);
-
-        StepResult Result = await this.ExecuteScriptAndWaitAsync(
-            JobId,
-            ScriptToRun,
-            Settings,
-            null,
-            CancellationToken).ConfigureAwait(false);
-
-        if (Result.IsOk)
-        {
-            await Task.Delay(AfterEffectsCliBridge.CloseHandleReleaseDelayMs, CancellationToken).ConfigureAwait(false);
-            return true;
-        }
-
-        return false;
-    }
-
-    public async Task<bool> OpenProjectAsync(
-        string ProjectPath,
-        PipelineSettings Settings,
-        CancellationToken CancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(Settings);
-
-        CancellationToken.ThrowIfCancellationRequested();
-
-        if (string.IsNullOrWhiteSpace(ProjectPath) || !File.Exists(ProjectPath))
-        {
-            return false;
-        }
-
-        string FullProjectPath = Path.GetFullPath(ProjectPath);
-        string JobId = Guid.NewGuid().ToString("N");
-        JobPayload Payload = JobPayload.FromSettings(
-            JobId,
-            AfterEffectsCliBridge.OpenProjectScriptCommand,
-            Settings,
-            0,
-            SaveAfterBatchOverride: false,
-            PurgeAfterBatchOverride: false,
-            ProjectToOpen: FullProjectPath);
-
-        StepResult Result = await this.ExecuteJobAsync(Payload, Settings, null, CancellationToken).ConfigureAwait(false);
-        return Result.IsOk;
-    }
-
-    public async Task<bool> SaveProjectAsync(
-        PipelineSettings Settings,
-        CancellationToken CancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(Settings);
-
-        CancellationToken.ThrowIfCancellationRequested();
-
-        if (!this.IsAfterEffectsRunning())
-        {
-            return false;
-        }
-
-        string JobId = Guid.NewGuid().ToString("N");
-        JobPayload Payload = JobPayload.FromSettings(
-            JobId,
-            AfterEffectsCliBridge.SaveProjectScriptCommand,
-            Settings,
-            0,
-            SaveAfterBatchOverride: false,
-            PurgeAfterBatchOverride: false);
-
-        StepResult Result = await this.ExecuteJobAsync(Payload, Settings, null, CancellationToken).ConfigureAwait(false);
-        return Result.IsOk;
-    }
-
-    public async Task<bool> TryRestartAfterEffectsAsync(
-        PipelineSettings Settings,
-        CancellationToken CancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(Settings);
-
-        CancellationToken.ThrowIfCancellationRequested();
-
-        this.TerminateRunningAfterEffectsProcesses();
-
-        await Task.Delay(500, CancellationToken).ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(Settings.AfterEffectsExecutablePath) || !File.Exists(Settings.AfterEffectsExecutablePath))
-        {
-            return false;
-        }
-
-        string? WorkingDirectory = Path.GetDirectoryName(Settings.AfterEffectsExecutablePath);
-        string EffectiveWorkingDirectory = this.PathsField.BaseDirectory;
-        if (!string.IsNullOrWhiteSpace(WorkingDirectory))
-        {
-            EffectiveWorkingDirectory = WorkingDirectory;
-        }
-
-        ProcessStartInfo StartInfo = new ProcessStartInfo
-        {
-            FileName = Settings.AfterEffectsExecutablePath,
-            UseShellExecute = false,
-            WorkingDirectory = EffectiveWorkingDirectory
-        };
-
-        Process? StartedProcess = Process.Start(StartInfo);
-        if (StartedProcess == null)
-        {
-            return false;
-        }
-
-        using (StartedProcess)
-        {
-            try
-            {
-                StartedProcess.WaitForInputIdle(10000);
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (Win32Exception)
-            {
-            }
-
-            Stopwatch Timer = Stopwatch.StartNew();
-            while (Timer.ElapsedMilliseconds < AfterEffectsCliBridge.RestartReadyTimeoutMs)
-            {
-                CancellationToken.ThrowIfCancellationRequested();
-
-                if (this.IsAfterEffectsRunning())
-                {
-                    await Task.Delay(1500, CancellationToken).ConfigureAwait(false);
-                    return true;
-                }
-
-                if (StartedProcess.HasExited)
-                {
-                    return false;
-                }
-
-                await Task.Delay(AfterEffectsCliBridge.RestartPollIntervalMs, CancellationToken).ConfigureAwait(false);
-            }
-
-            return this.IsAfterEffectsRunning();
-        }
-    }
-
-    public void CleanupIpcFiles()
-    {
-        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.JobFilePath);
-        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.HeartbeatFilePath);
-        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.ResultFilePath);
-    }
-
-    #endregion
-
-    #region Private Methods
-
     private async Task PrepareAndWriteJobFilesAsync(JobPayload Payload, CancellationToken CancellationToken)
     {
         this.PathsField.EnsureBaseDirectoryExists();
 
         AfterEffectsCliBridge.TryDeleteFile(this.PathsField.HeartbeatFilePath);
         AfterEffectsCliBridge.TryDeleteFile(this.PathsField.ResultFilePath);
+        AfterEffectsCliBridge.TryDeleteFile(this.PathsField.AbortFlagFilePath);
 
         string JsonContent = JsonSerializer.Serialize(Payload, IpcJsonOptions.Default);
         string TempJobPath = Path.Combine(
@@ -439,11 +462,13 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
 
                     if (Reason == WatchdogTerminationReason.UserCancelled || CancellationToken.IsCancellationRequested)
                     {
+                        await this.SignalAbortAndDrainAsync(JobId).ConfigureAwait(false);
                         throw new OperationCanceledException(CancellationToken);
                     }
 
                     if (Reason == WatchdogTerminationReason.HeartbeatTimeout)
                     {
+                        await this.SignalAbortAndDrainAsync(JobId).ConfigureAwait(false);
                         return new StepResult
                         {
                             JobId = JobId,
@@ -475,12 +500,154 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         }
     }
 
-    private void TerminateRunningAfterEffectsProcesses()
+    private async Task SignalAbortAndDrainAsync(string JobId)
+    {
+        if (!this.IsAfterEffectsRunning())
+        {
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.AbortFlagFilePath);
+            return;
+        }
+
+        try
+        {
+            this.PathsField.EnsureBaseDirectoryExists();
+            await File.WriteAllTextAsync(
+                this.PathsField.AbortFlagFilePath,
+                JobId,
+                this.Utf8NoBomEncodingField,
+                CancellationToken.None).ConfigureAwait(false);
+
+            using (CancellationTokenSource DrainCts = new CancellationTokenSource(
+                TimeSpan.FromSeconds(AfterEffectsCliBridge.GracefulAbortWaitSeconds)))
+            {
+                try
+                {
+                    await this.WatcherField.WaitForResultAsync(
+                        JobId,
+                        null,
+                        null,
+                        DrainCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+        }
+        catch (IOException)
+        {
+        }
+        finally
+        {
+            AfterEffectsCliBridge.TryDeleteFile(this.PathsField.AbortFlagFilePath);
+        }
+    }
+
+    private async Task<bool> LaunchAfterEffectsWithProjectAsync(
+        string FullProjectPath,
+        PipelineSettings Settings,
+        CancellationToken CancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(Settings.AfterEffectsExecutablePath) || !File.Exists(Settings.AfterEffectsExecutablePath))
+        {
+            return false;
+        }
+
+        string? WorkingDirectory = Path.GetDirectoryName(Settings.AfterEffectsExecutablePath);
+        string EffectiveWorkingDirectory = this.PathsField.BaseDirectory;
+        if (!string.IsNullOrWhiteSpace(WorkingDirectory))
+        {
+            EffectiveWorkingDirectory = WorkingDirectory;
+        }
+
+        ProcessStartInfo StartInfo = new ProcessStartInfo
+        {
+            FileName = Settings.AfterEffectsExecutablePath,
+            UseShellExecute = false,
+            WorkingDirectory = EffectiveWorkingDirectory
+        };
+        StartInfo.ArgumentList.Add(FullProjectPath);
+
+        Process? StartedProcess = Process.Start(StartInfo);
+        if (StartedProcess == null)
+        {
+            return false;
+        }
+
+        using (StartedProcess)
+        {
+            Stopwatch Timer = Stopwatch.StartNew();
+            while (Timer.ElapsedMilliseconds < AfterEffectsCliBridge.DirectOpenReadyTimeoutMs)
+            {
+                CancellationToken.ThrowIfCancellationRequested();
+
+                if (StartedProcess.HasExited)
+                {
+                    return this.IsAfterEffectsRunning();
+                }
+
+                if (this.IsAfterEffectsRunning())
+                {
+                    return true;
+                }
+
+                await Task.Delay(AfterEffectsCliBridge.RestartPollIntervalMs, CancellationToken).ConfigureAwait(false);
+            }
+
+            return this.IsAfterEffectsRunning();
+        }
+    }
+
+    private async Task ShutdownRunningAfterEffectsProcessesAsync(CancellationToken CancellationToken)
     {
         Process[] Processes = Process.GetProcesses();
         try
         {
             foreach (Process CurrentProcess in Processes)
+            {
+                if (!AfterEffectsCliBridge.IsAfterEffectsProcess(CurrentProcess))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (!CurrentProcess.HasExited)
+                    {
+                        CurrentProcess.CloseMainWindow();
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                catch (Win32Exception)
+                {
+                }
+            }
+
+            Stopwatch CloseTimer = Stopwatch.StartNew();
+            while (this.IsAfterEffectsRunning() && CloseTimer.ElapsedMilliseconds < AfterEffectsCliBridge.GracefulCloseWaitMs)
+            {
+                CancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(AfterEffectsCliBridge.RestartPollIntervalMs, CancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            foreach (Process CurrentProcess in Processes)
+            {
+                CurrentProcess.Dispose();
+            }
+        }
+
+        if (!this.IsAfterEffectsRunning())
+        {
+            return;
+        }
+
+        Process[] RemainingProcesses = Process.GetProcesses();
+        try
+        {
+            foreach (Process CurrentProcess in RemainingProcesses)
             {
                 if (!AfterEffectsCliBridge.IsAfterEffectsProcess(CurrentProcess))
                 {
@@ -508,7 +675,7 @@ public sealed class AfterEffectsCliBridge : IAfterEffectsBridge
         }
         finally
         {
-            foreach (Process CurrentProcess in Processes)
+            foreach (Process CurrentProcess in RemainingProcesses)
             {
                 CurrentProcess.Dispose();
             }

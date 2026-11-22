@@ -101,11 +101,7 @@ public sealed partial class RecoveryViewModel : ObservableObject
         {
             if (this.SetProperty(ref this.IsBusyField, value))
             {
-                this.OnPropertyChanged(nameof(this.IsNotBusy));
-                this.LoadSnapshotsCommand.NotifyCanExecuteChanged();
-                this.BrowseProjectFileCommand.NotifyCanExecuteChanged();
-                this.RestoreSnapshotCommand.NotifyCanExecuteChanged();
-                this.ExecuteReverseRollbackCommand.NotifyCanExecuteChanged();
+                this.NotifyAllOperationStates();
             }
         }
     }
@@ -114,7 +110,7 @@ public sealed partial class RecoveryViewModel : ObservableObject
     {
         get
         {
-            return !this.IsBusyField;
+            return !this.IsBusyField && !this.AppStateField.IsOperationActive;
         }
     }
 
@@ -175,6 +171,7 @@ public sealed partial class RecoveryViewModel : ObservableObject
         this.TransactionManagerField = TransactionManager;
         this.OrchestratorField = Orchestrator;
         this.AppStateField.PreflightStateUpdated += this.OnPreflightStateUpdated;
+        this.AppStateField.OperationStateChanged += this.OnAppStateOperationStateChanged;
     }
 
     #endregion
@@ -228,9 +225,26 @@ public sealed partial class RecoveryViewModel : ObservableObject
         });
     }
 
+    private void OnAppStateOperationStateChanged(object? Sender, EventArgs Args)
+    {
+        this.RunOnMainThread(() =>
+        {
+            this.NotifyAllOperationStates();
+        });
+    }
+
+    private void NotifyAllOperationStates()
+    {
+        this.OnPropertyChanged(nameof(this.IsNotBusy));
+        this.LoadSnapshotsCommand.NotifyCanExecuteChanged();
+        this.BrowseProjectFileCommand.NotifyCanExecuteChanged();
+        this.RestoreSnapshotCommand.NotifyCanExecuteChanged();
+        this.ExecuteReverseRollbackCommand.NotifyCanExecuteChanged();
+    }
+
     private bool CanBrowseProjectFile()
     {
-        return !this.IsBusyField;
+        return !this.IsBusyField && !this.AppStateField.IsOperationActive;
     }
 
     [RelayCommand(CanExecute = nameof(CanBrowseProjectFile))]
@@ -264,7 +278,9 @@ public sealed partial class RecoveryViewModel : ObservableObject
 
     private bool CanLoadSnapshots()
     {
-        return !this.IsBusyField && !string.IsNullOrWhiteSpace(this.ProjectFilePathField);
+        return !this.IsBusyField
+            && !this.AppStateField.IsOperationActive
+            && !string.IsNullOrWhiteSpace(this.ProjectFilePathField);
     }
 
     [RelayCommand(CanExecute = nameof(CanLoadSnapshots))]
@@ -329,7 +345,7 @@ public sealed partial class RecoveryViewModel : ObservableObject
 
     private bool CanRestoreSnapshot(SnapshotItemViewModel? Item)
     {
-        return !this.IsBusyField && Item != null;
+        return !this.IsBusyField && !this.AppStateField.IsOperationActive && Item != null;
     }
 
     [RelayCommand(CanExecute = nameof(CanRestoreSnapshot))]
@@ -347,6 +363,13 @@ public sealed partial class RecoveryViewModel : ObservableObject
         }
 
         await this.AppStateField.EnsureInitializedAsync();
+
+        if (!this.AppStateField.TryBeginOperation($"Snapshot-Restore ({Item.TransactionId})"))
+        {
+            string ActiveName = this.AppStateField.ActiveOperationName;
+            this.SetStatus($"Bitte warte, bis die laufende Operation ('{ActiveName}') abgeschlossen ist.", true);
+            return;
+        }
 
         this.IsBusy = true;
         this.SetStatus($"Stelle Snapshot {Item.TransactionId} wieder her...", false);
@@ -378,6 +401,7 @@ public sealed partial class RecoveryViewModel : ObservableObject
         }
         finally
         {
+            this.AppStateField.EndOperation();
             this.RunOnMainThread(() =>
             {
                 this.IsBusy = false;
@@ -387,13 +411,20 @@ public sealed partial class RecoveryViewModel : ObservableObject
 
     private bool CanExecuteReverseRollback()
     {
-        return !this.IsBusyField;
+        return !this.IsBusyField && !this.AppStateField.IsOperationActive;
     }
 
     [RelayCommand(CanExecute = nameof(CanExecuteReverseRollback))]
     private async Task ExecuteReverseRollbackAsync()
     {
         await this.AppStateField.EnsureInitializedAsync();
+
+        if (!this.AppStateField.TryBeginOperation("Granulares Reverse-Rollback"))
+        {
+            string ActiveName = this.AppStateField.ActiveOperationName;
+            this.SetStatus($"Bitte warte, bis die laufende Operation ('{ActiveName}') abgeschlossen ist.", true);
+            return;
+        }
 
         ReverseRollbackMode Mode = this.ResolveReverseRollbackMode();
         this.AppStateField.CurrentSettings.ReverseMode = Mode;
@@ -448,6 +479,7 @@ public sealed partial class RecoveryViewModel : ObservableObject
         }
         finally
         {
+            this.AppStateField.EndOperation();
             this.RunOnMainThread(() =>
             {
                 this.IsBusy = false;

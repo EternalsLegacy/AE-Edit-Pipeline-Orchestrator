@@ -27,17 +27,24 @@ function runStep(job) {
     var frameDur = comp.frameDuration;
     var processedCount = 0;
     var skippedCount = 0;
+    var aborted = false;
 
     safeBeginUndoGroup("AE Orchestrator: Precompose Clips");
     try {
         for (var idx = slice.startIndex; idx < slice.endIndex; idx++) {
+            if (isAbortRequested()) {
+                aborted = true;
+                break;
+            }
+
             var clipLayer = targetLayers[idx];
             var clipNum = idx + 1;
             var clipTag = "[EDIT_CLIP:" + clipNum + "]";
 
             writeHeartbeat(jobId, idx + 1, totalClips, "Pre-compose Clip " + clipNum + " / " + totalClips + ": " + clipLayer.name);
 
-            if (hasCommentTag(clipLayer, "[EDIT_CLIP:") ||
+            if (clipLayer.locked ||
+                hasCommentTag(clipLayer, "[EDIT_CLIP:") ||
                 hasCommentTag(clipLayer, "[DONE_PIPELINE_1]") ||
                 hasCommentTag(clipLayer, "[DONE_ZOOM_GROUP]") ||
                 startsWith(clipLayer.name, "Pre-comp ") ||
@@ -76,6 +83,10 @@ function runStep(job) {
         } else {
             deselectAllLayers(comp);
         }
+    }
+
+    if (aborted) {
+        return buildAbortedResult(jobId, comp, "Pre-compose sauber abgebrochen.");
     }
 
     return buildOkResult(jobId, comp, {

@@ -474,6 +474,7 @@ public sealed partial class PipelineViewModel : ObservableObject
         this.ValidatorField = Validator;
         this.OrchestratorField = Orchestrator;
         this.AppStateField.SettingsUpdated += this.OnAppStateSettingsUpdated;
+        this.AppStateField.OperationStateChanged += this.OnAppStateOperationStateChanged;
     }
 
     #endregion
@@ -502,6 +503,14 @@ public sealed partial class PipelineViewModel : ObservableObject
     #endregion
 
     #region Private Methods
+
+    private void OnAppStateOperationStateChanged(object? Sender, EventArgs Args)
+    {
+        this.RunOnMainThread(() =>
+        {
+            this.NotifyCommandStates();
+        });
+    }
 
     private void OnAppStateSettingsUpdated(object? Sender, EventArgs Args)
     {
@@ -740,13 +749,20 @@ public sealed partial class PipelineViewModel : ObservableObject
 
     private bool CanRunPreflight()
     {
-        return !this.IsBusyField;
+        return !this.IsBusyField && !this.AppStateField.IsOperationActive;
     }
 
     [RelayCommand(CanExecute = nameof(CanRunPreflight))]
     private async Task RunPreflightAsync()
     {
         await this.AppStateField.EnsureInitializedAsync();
+
+        if (!this.AppStateField.TryBeginOperation("Preflight-Prüfung"))
+        {
+            string ActiveName = this.AppStateField.ActiveOperationName;
+            this.AppendLog($"Preflight blockiert: Operation '{ActiveName}' läuft bereits.", true, false);
+            return;
+        }
 
         this.IsBusy = true;
         this.HasRollbackStatus = false;
@@ -809,6 +825,7 @@ public sealed partial class PipelineViewModel : ObservableObject
         }
         finally
         {
+            this.AppStateField.EndOperation();
             this.RunOnMainThread(() =>
             {
                 this.IsBusy = false;
@@ -818,7 +835,7 @@ public sealed partial class PipelineViewModel : ObservableObject
 
     private bool CanStartPipeline()
     {
-        if (this.IsBusyField)
+        if (this.IsBusyField || this.AppStateField.IsOperationActive)
         {
             return false;
         }
@@ -877,6 +894,13 @@ public sealed partial class PipelineViewModel : ObservableObject
             this.AppendLog($"Warnung beim Speichern der Einstellungen: {SaveEx.Message}", true, false);
         }
 
+        if (!this.AppStateField.TryBeginOperation("Pipeline-Ausführung"))
+        {
+            string ActiveName = this.AppStateField.ActiveOperationName;
+            this.AppendLog($"Pipeline-Start blockiert: Operation '{ActiveName}' läuft bereits.", true, false);
+            return;
+        }
+
         CancellationTokenSource RunCts = new CancellationTokenSource();
         this.ActiveCancellationTokenSourceField = RunCts;
 
@@ -930,6 +954,7 @@ public sealed partial class PipelineViewModel : ObservableObject
         {
             RunCts.Dispose();
             this.ActiveCancellationTokenSourceField = null;
+            this.AppStateField.EndOperation();
 
             this.RunOnMainThread(() =>
             {

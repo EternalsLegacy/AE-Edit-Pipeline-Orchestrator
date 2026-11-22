@@ -9,6 +9,7 @@ public sealed class IpcPaths
     private const string JobFileName = "job.json";
     private const string HeartbeatFileName = "heartbeat.json";
     private const string ResultFileName = "result.json";
+    private const string AbortFlagFileName = "abort.flag";
     private const string RunnerScriptFileName = "runner.jsx";
     private const string CloseNoSaveScriptFileName = "close_no_save.jsx";
 
@@ -52,6 +53,14 @@ public sealed class IpcPaths
         get
         {
             return Path.Combine(this.BaseDirectoryField, IpcPaths.ResultFileName);
+        }
+    }
+
+    public string AbortFlagFilePath
+    {
+        get
+        {
+            return Path.Combine(this.BaseDirectoryField, IpcPaths.AbortFlagFileName);
         }
     }
 

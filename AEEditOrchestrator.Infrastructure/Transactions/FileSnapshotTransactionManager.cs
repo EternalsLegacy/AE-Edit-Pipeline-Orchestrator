@@ -355,14 +355,7 @@ public sealed class FileSnapshotTransactionManager : ITransactionManager
     {
         CancellationToken.ThrowIfCancellationRequested();
 
-        // Step A: Close project in After Effects without saving to release file lock.
-        bool ClosedCleanly = await this.BridgeField.CloseProjectWithoutSavingAsync(Settings, CancellationToken).ConfigureAwait(false);
-        if (!ClosedCleanly)
-        {
-            await this.BridgeField.TryRestartAfterEffectsAsync(Settings, CancellationToken).ConfigureAwait(false);
-        }
-
-        // Step B: Verify snapshot integrity, copy to temp file in target dir, move atomically, verify restored hash.
+        // Verify snapshot integrity BEFORE closing or restarting After Effects.
         bool IsSnapshotIntact = await this.VerifySnapshotIntegrityAsync(Manifest, CancellationToken).ConfigureAwait(false);
         if (!IsSnapshotIntact)
         {
@@ -376,6 +369,15 @@ public sealed class FileSnapshotTransactionManager : ITransactionManager
 
             return false;
         }
+
+        // Step A: Close project in After Effects without saving to release file lock.
+        bool ClosedCleanly = await this.BridgeField.CloseProjectWithoutSavingAsync(Settings, CancellationToken).ConfigureAwait(false);
+        if (!ClosedCleanly)
+        {
+            await this.BridgeField.TryRestartAfterEffectsAsync(Settings, CancellationToken).ConfigureAwait(false);
+        }
+
+        // Step B: Copy to temp file in target dir, move atomically, verify restored hash.
 
         if (string.IsNullOrWhiteSpace(Manifest.OriginalProjectPath))
         {

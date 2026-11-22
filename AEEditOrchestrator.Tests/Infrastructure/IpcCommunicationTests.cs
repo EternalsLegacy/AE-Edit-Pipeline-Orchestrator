@@ -50,6 +50,7 @@ public sealed class IpcCommunicationTests : IDisposable
         Assert.Equal(Path.Combine(ExpectedLocalAppData, "job.json"), DefaultPaths.JobFilePath);
         Assert.Equal(Path.Combine(ExpectedLocalAppData, "heartbeat.json"), DefaultPaths.HeartbeatFilePath);
         Assert.Equal(Path.Combine(ExpectedLocalAppData, "result.json"), DefaultPaths.ResultFilePath);
+        Assert.Equal(Path.Combine(ExpectedLocalAppData, "abort.flag"), DefaultPaths.AbortFlagFilePath);
         Assert.Equal(Path.Combine(AppContext.BaseDirectory, "Resources", "Scripts", "jsx"), DefaultPaths.JsxScriptsDirectory);
         Assert.Equal(Path.Combine(DefaultPaths.JsxScriptsDirectory, "runner.jsx"), DefaultPaths.RunnerScriptPath);
         Assert.Equal(Path.Combine(DefaultPaths.JsxScriptsDirectory, "close_no_save.jsx"), DefaultPaths.CloseNoSaveScriptPath);
@@ -284,6 +285,7 @@ public sealed class IpcCommunicationTests : IDisposable
         File.WriteAllText(Paths.JobFilePath, "{}");
         File.WriteAllText(Paths.HeartbeatFilePath, "{}");
         File.WriteAllText(Paths.ResultFilePath, "{}");
+        File.WriteAllText(Paths.AbortFlagFilePath, "job-1");
 
         AfterEffectsCliBridge Bridge = new AfterEffectsCliBridge(Paths);
         Bridge.CleanupIpcFiles();
@@ -291,6 +293,7 @@ public sealed class IpcCommunicationTests : IDisposable
         Assert.False(File.Exists(Paths.JobFilePath));
         Assert.False(File.Exists(Paths.HeartbeatFilePath));
         Assert.False(File.Exists(Paths.ResultFilePath));
+        Assert.False(File.Exists(Paths.AbortFlagFilePath));
     }
 
     [Fact]

@@ -64,6 +64,7 @@ function runStep(job) {
 
     var sliderEffect = null;
     var beatCount = 0;
+    var aborted = false;
 
     safeBeginUndoGroup("AE Orchestrator: Beat Detection");
     try {
@@ -105,6 +106,11 @@ function runStep(job) {
         var maxVal = -999999;
 
         for (var i = 0; i <= totalFrames; i++) {
+            if (i % 5 === 0 && isAbortRequested()) {
+                aborted = true;
+                break;
+            }
+
             var t = startTime + (i * frameDur);
             var val = sliderProp.valueAtTime(t, false);
 
@@ -123,72 +129,78 @@ function runStep(job) {
             }
         }
 
-        var markerTarget = useCompMarkers ? comp.markerProperty : layer.property("ADBE Marker");
-        var lastMarkerFrame = -minFrameGap - 1;
+        if (!aborted && isAbortRequested()) {
+            aborted = true;
+        }
 
-        if (isRedOverlay) {
-            var minSpread = 2.0 + ((1.0 - (sensitivity / 100.0)) * 10.0);
-            var spread = maxVal - minVal;
-            if (spread < minSpread) {
-                return buildErrorResult(
-                    jobId,
-                    null,
-                    "Es konnte kein eindeutiges rotes Overlay erkannt werden (Kontrast zu gering: " +
-                    spread.toFixed(2) + " < " + minSpread.toFixed(2) + ")."
-                );
-            }
+        if (!aborted) {
+            var markerTarget = useCompMarkers ? comp.markerProperty : layer.property("ADBE Marker");
+            var lastMarkerFrame = -minFrameGap - 1;
 
-            var redThreshold = minVal + (spread * 0.5);
-            var prevIsRed = values[0] > redThreshold;
+            if (isRedOverlay) {
+                var minSpread = 2.0 + ((1.0 - (sensitivity / 100.0)) * 10.0);
+                var spread = maxVal - minVal;
+                if (spread < minSpread) {
+                    return buildErrorResult(
+                        jobId,
+                        null,
+                        "Es konnte kein eindeutiges rotes Overlay erkannt werden (Kontrast zu gering: " +
+                        spread.toFixed(2) + " < " + minSpread.toFixed(2) + ")."
+                    );
+                }
 
-            for (var k = 1; k < values.length; k++) {
-                var currentIsRed = values[k] > redThreshold;
-                if (currentIsRed !== prevIsRed) {
-                    if ((k - lastMarkerFrame) >= minFrameGap) {
+                var redThreshold = minVal + (spread * 0.5);
+                var prevIsRed = values[0] > redThreshold;
+
+                for (var k = 1; k < values.length; k++) {
+                    var currentIsRed = values[k] > redThreshold;
+                    if (currentIsRed !== prevIsRed) {
+                        if ((k - lastMarkerFrame) >= minFrameGap) {
+                            beatCount++;
+                            var mvRed = new MarkerValue("Beat " + beatCount);
+                            mvRed.label = currentIsRed ? 1 : 9;
+                            markerTarget.setValueAtTime(times[k], mvRed);
+                            lastMarkerFrame = k;
+                        }
+                        prevIsRed = currentIsRed;
+                    }
+                }
+            } else {
+                var normSens = sensitivity / 100.0;
+                var inv = 1.0 - normSens;
+                var threshold = 1.5 + (inv * inv * 30.0);
+
+                for (var j = 1; j < values.length; j++) {
+                    var curr = values[j];
+                    var prev = values[j - 1];
+                    var isLocalPeak = (curr >= prev) && (j === values.length - 1 || curr >= values[j + 1]);
+
+                    if (curr < threshold || !isLocalPeak) {
+                        continue;
+                    }
+
+                    var winStart = Math.max(0, j - 3);
+                    var winEnd = Math.min(values.length - 1, j + 2);
+                    var neighborSum = 0.0;
+                    var neighborCount = 0;
+
+                    for (var w = winStart; w <= winEnd; w++) {
+                        if (w !== j) {
+                            neighborSum += values[w];
+                            neighborCount++;
+                        }
+                    }
+
+                    var localBaseline = (neighborCount > 0) ? (neighborSum / neighborCount) : 0.0;
+                    var isProminentSpike = curr >= ((localBaseline * 1.8) + 0.75);
+
+                    if (isProminentSpike && (j - lastMarkerFrame) >= minFrameGap) {
                         beatCount++;
-                        var mvRed = new MarkerValue("Beat " + beatCount);
-                        mvRed.label = currentIsRed ? 1 : 9;
-                        markerTarget.setValueAtTime(times[k], mvRed);
-                        lastMarkerFrame = k;
+                        var mv4 = new MarkerValue("Beat " + beatCount);
+                        mv4.label = (beatCount % 2 === 1) ? 1 : 9;
+                        markerTarget.setValueAtTime(times[j], mv4);
+                        lastMarkerFrame = j;
                     }
-                    prevIsRed = currentIsRed;
-                }
-            }
-        } else {
-            var normSens = sensitivity / 100.0;
-            var inv = 1.0 - normSens;
-            var threshold = 1.5 + (inv * inv * 30.0);
-
-            for (var j = 1; j < values.length; j++) {
-                var curr = values[j];
-                var prev = values[j - 1];
-                var isLocalPeak = (curr >= prev) && (j === values.length - 1 || curr >= values[j + 1]);
-
-                if (curr < threshold || !isLocalPeak) {
-                    continue;
-                }
-
-                var winStart = Math.max(0, j - 3);
-                var winEnd = Math.min(values.length - 1, j + 2);
-                var neighborSum = 0.0;
-                var neighborCount = 0;
-
-                for (var w = winStart; w <= winEnd; w++) {
-                    if (w !== j) {
-                        neighborSum += values[w];
-                        neighborCount++;
-                    }
-                }
-
-                var localBaseline = (neighborCount > 0) ? (neighborSum / neighborCount) : 0.0;
-                var isProminentSpike = curr >= ((localBaseline * 1.8) + 0.75);
-
-                if (isProminentSpike && (j - lastMarkerFrame) >= minFrameGap) {
-                    beatCount++;
-                    var mv4 = new MarkerValue("Beat " + beatCount);
-                    mv4.label = (beatCount % 2 === 1) ? 1 : 9;
-                    markerTarget.setValueAtTime(times[j], mv4);
-                    lastMarkerFrame = j;
                 }
             }
         }
@@ -199,6 +211,10 @@ function runStep(job) {
             } catch (eRem) {}
         }
         safeEndUndoGroup();
+    }
+
+    if (aborted) {
+        return buildAbortedResult(jobId, comp, "Beat-Erkennung sauber abgebrochen.");
     }
 
     var msg = "Beat-Erkennung (" + modeLabel + ") abgeschlossen: " + beatCount + " Marker gesetzt.";

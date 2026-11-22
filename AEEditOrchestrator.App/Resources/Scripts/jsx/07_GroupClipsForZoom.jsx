@@ -30,10 +30,16 @@ function runStep(job) {
     var frameDur = comp.frameDuration;
     var processedCount = 0;
     var skippedCount = 0;
+    var aborted = false;
 
     safeBeginUndoGroup("AE Orchestrator: Group Clips For Zoom");
     try {
         for (var idx = slice.startIndex; idx < slice.endIndex; idx++) {
+            if (isAbortRequested()) {
+                aborted = true;
+                break;
+            }
+
             var baseClip = baseClips[idx];
             var existingNum = extractClipNumber(baseClip.comment);
             var clipNum = (existingNum !== null) ? existingNum : (idx + 1);
@@ -43,7 +49,7 @@ function runStep(job) {
 
             writeHeartbeat(jobId, idx + 1, totalClips, "ZoomGroup Clip " + clipNum + " / " + totalClips + " (" + zoomTag + ")");
 
-            if (hasCommentTag(baseClip, "[DONE_ZOOM_GROUP]") || startsWith(baseClip.name, "ZoomGroup_")) {
+            if (baseClip.locked || hasCommentTag(baseClip, "[DONE_ZOOM_GROUP]") || startsWith(baseClip.name, "ZoomGroup_")) {
                 skippedCount++;
                 continue;
             }
@@ -90,6 +96,10 @@ function runStep(job) {
         } else {
             deselectAllLayers(comp);
         }
+    }
+
+    if (aborted) {
+        return buildAbortedResult(jobId, comp, "ZoomGroup-Gruppierung sauber abgebrochen.");
     }
 
     return buildOkResult(jobId, comp, {

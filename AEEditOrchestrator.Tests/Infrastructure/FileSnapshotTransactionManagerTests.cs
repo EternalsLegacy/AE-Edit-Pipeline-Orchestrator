@@ -217,6 +217,7 @@ public sealed class FileSnapshotTransactionManagerTests : IDisposable
         Assert.False(RolledBack);
         Assert.Equal(TransactionStatus.Failed, Manifest.Status);
         Assert.Equal(ModifiedProjectBytes, await File.ReadAllBytesAsync(this.ProjectFilePathField));
+        Assert.Empty(Bridge.RecordedCalls);
     }
 
     [Fact]
